@@ -1,0 +1,46 @@
+{
+  "type": "claw",
+  "name": "ICT Trade Agent",
+  "nameZh": "ICT 自動交易 Agent",
+  "description": "Fully automated ICT 2022 + OTE + Power of 3 agent for Apex 50K Prop Firm. Daily Bias → Liquidity Sweep → MSS + PD Array + OTE entry. Hard-coded $200 daily SL kill-switch, max 2 micro contracts, $2,000 intraday trail DD. Targets 5+ qualifying profit days ($250+/day net).",
+  "descriptionZh": "專為 Apex 50K Prop Firm 出金設計的完整 ICT 自動交易 Agent。每日 Bias → London Liquidity Sweep → MSS + PD Array + OTE 入場。硬編碼 $200 日損 kill-switch、最大 2 micro 合約、$2000 日內 trail DD。目標 5 個合格獲利日（每日淨利 ≥$250）。",
+  "soulMdZh": "ict_trade_agent_soul.md",
+  "tasksJson": {
+    "en": [
+      "Execute ICT 2022 London model",
+      "Calculate OTE Fib levels",
+      "Enforce $200 daily SL kill-switch",
+      "Track 5 qualifying profit days",
+      "Auto position sizing with POINT_VALUE"
+    ],
+    "zh": [
+      "執行 ICT 2022 London 模型",
+      "計算 OTE Fib 水平",
+      "強制 $200 日損 kill-switch",
+      "追蹤 5 個合格獲利日",
+      "使用 POINT_VALUE 自動倉位管理"
+    ]
+  },
+  "category": "trading",
+  "version": "1.0.0",
+  "author": "Yip Trading Strategist",
+  "tradingParams": {
+    "accountSize": 50000,
+    "profitTarget": 3000,
+    "maxDrawdown": 2000,
+    "minDaysToPass": 5,
+    "maxContracts": 2,
+    "dailySL": 200,
+    "qualifyingProfitPerDay": 250,
+    "timezone": "HKT (UTC+8)",
+    "symbols": {
+      "MES.F": { "pointValue": 5, "precision": 2 },
+      "MNQ.F": { "pointValue": 2, "precision": 2 },
+      "M2K.F": { "pointValue": 5, "precision": 2 },
+      "MYM.F": { "pointValue": 0.5, "precision": 2 },
+      "M6E.F": { "pointValue": 12500, "precision": 4 },
+      "M6A.F": { "pointValue": 10000, "precision": 4 },
+      "MCL.F": { "pointValue": 100, "precision": 2 }
+    }
+  }
+}

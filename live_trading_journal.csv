@@ -1,0 +1,8 @@
+date,killzone,symbol,direction,entry_price,sl,tp1,contracts,close_price,signal_est_pnl
+2026-05-06,London,MNQ.F,short,27813.0,27825.5,27775.5,2,27825.5,-400
+2026-05-06,London,M2K.F,short,2806.5,2816.5,2776.5,2,2816.5,-400
+2026-05-06,London,M6E.F,long,1.1708,1.1708,1.1708,2,1.1708012,1200
+2026-05-06,London,MCL.F,short,104.77,104.79,104.71,1,104.71,600
+2026-05-06,London,MET.F,long,2371.0,1371.0,5371.0,1,2405.5,0
+2026-05-06,London,SIL.F,long,73.275,73.075,73.875,1,73.875,600
+2026-05-06,London,MGC.F,short,4548.4,4549.4,4545.4,2,4549.4,-400
