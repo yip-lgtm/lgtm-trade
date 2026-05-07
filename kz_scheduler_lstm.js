@@ -11,7 +11,7 @@ const fs = require('fs');
 const BOT_TOKEN = '8606567428:AAFvcsiNf00mAIES6-CTIwKeQTKaos0trNY';
 const CHAT_ID = '8475453959';
 const SCANNER_FILE = '/home/node/.openclaw/workspace/ict_scanner_v5.js';
-const LSTM_FILE = '/home/node/.openclaw/workspace/lstm_live_1hr.py';
+const LSTM_FILE = '/home/node/.openclaw/workspace/lstm_live.py';
 const LOG_FILE = '/tmp/kz_lstm.log';
 
 function log(msg) {
@@ -50,7 +50,7 @@ async function main() {
         
         // Run LSTM 1HR
         log('Running LSTM 1HR...');
-        const lstmOut = execSync('/usr/bin/python3 /home/node/.openclaw/workspace/lstm_live_1hr.py', { timeout: 3600000, encoding: 'utf8' });
+        const lstmOut = execSync('/usr/bin/python3 /home/node/.openclaw/workspace/lstm_live.py', { timeout: 3600000, encoding: 'utf8' });
         
         // Run ICT
         log('Running ICT...');
