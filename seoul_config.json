@@ -1,0 +1,76 @@
+{
+  "gateway": {
+    "mode": "local",
+    "port": 18789,
+    "logLevel": "info",
+    "controlUi": {
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": false
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "YOUR_TELEGRAM_BOT_TOKEN",
+      "dmPolicy": "allowlist",
+      "allowFrom": ["8475453959"]
+    }
+  },
+  "plugins": {
+    "entries": {
+      "minimax": {
+        "enabled": true
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "models": {
+        "openrouter/anthropic/claude-sonnet-4": {
+          "alias": "Claude Sonnet 4"
+        }
+      },
+      "model": {
+        "primary": "openrouter/anthropic/claude-sonnet-4"
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "openrouter:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
+      }
+    }
+  },
+  "openrouter": {
+    "apiKey": "YOUR_OPENROUTER_API_KEY"
+  },
+  "polymarket": {
+    "address": "0x8AfCA7B78096fe4980Ff709626A8B464B17AC311",
+    "privateKey": "0x580c58cafb7f2a9b7b56fe9daa82e87407a3115233159e97239d293e24ab6127",
+    "apiKey": "019e6adf-f3d7-70b0-9d00-7b372f9dba35",
+    "apiSecret": "xNZFv5XtwhtUxYD9RzFqv_cegprb_Ze_un3mbaJbNIE=",
+    "apiPassphrase": "751538196461dbab2f04cf963de437438787c2e0237741c84ef17dd4ee90dff1",
+    "creatorCode": "0x55009b3ea29c0ada6aa63dee061f76322e8ee5ebd2edd7bbb50e62efa334a073",
+    "apiPassphrase": "YOUR_POLYMARKET_API_PASSPHRASE",
+    "clobEndpoint": "https://clob.polymarket.com",
+    "gammaEndpoint": "https://gamma-api.polymarket.com"
+  },
+  "chainstack": {
+    "nodeUrl": "https://1rpc.io/matic",
+    "chainId": 137
+  },
+  "BTC_5m_Bot": {
+    "enabled": true,
+    "MIN_PROB": 0.87,
+    "MIN_EDGE": 0.03,
+    "MAX_POSITION": 5,
+    "MAX_DAILY_LOSS": 30,
+    "CHECK_INTERVAL": 81,
+    "STATE_WINDOW": 4,
+    "DRY_RUN": false,
+    "atrThreshold": 0.8,
+    "volThreshold": 0.6
+  }
+}

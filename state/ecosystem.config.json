@@ -1,0 +1,15 @@
+{
+  "apps": [{
+    "name": "markov-btc-trader",
+    "script": "trader.js",
+    "cwd": "/home/node/.openclaw/workspace/state",
+    "env": {
+      "NODE_ENV": "production"
+    },
+    "instances": 1,
+    "autorestart": true,
+    "watch": false,
+    "max_memory_restart": "500M",
+    "restart_delay": 4000
+  }]
+}

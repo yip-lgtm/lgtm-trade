@@ -1,0 +1,17 @@
+[Unit]
+Description=BTC 5m Polymarket Bot v3
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+EnvironmentFile=/home/ubuntu/btc_5m_bot.env
+ExecStart=/usr/bin/python3 /home/ubuntu/btc_5m_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
