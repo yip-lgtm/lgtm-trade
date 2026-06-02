@@ -1,0 +1,9 @@
+{
+  "name": "claw_trading_002",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {}
+}

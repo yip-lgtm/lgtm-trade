@@ -1,0 +1,5 @@
+symbol,direction,entry,exit,pnl_t,pnl_d
+MES.F,-1,7065.25,TP1,12.75,127.5
+MES.F,-1,7059.5,SL,-10.25,-102.5
+MES.F,-1,7124.0,TP1,14.25,142.5
+MES.F,-1,7123.5,SL,-11.5,-115.0

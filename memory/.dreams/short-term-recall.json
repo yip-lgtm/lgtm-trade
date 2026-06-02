@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "updatedAt": "2026-05-29T07:09:22.385Z",
+  "entries": {
+    "memory:memory/2026-05-29.md:1:29": {
+      "key": "memory:memory/2026-05-29.md:1:29",
+      "path": "memory/2026-05-29.md",
+      "startLine": 1,
+      "endLine": 29,
+      "source": "memory",
+      "snippet": "# Memory - 2026-05-29 ## Session Summary ### Gateway Fixed - Gateway was broken with \"pairing required\" and \"token missing\" errors - Fixed by regenerating gateway token: `0lYeNoUfUZFji_9G8gC-P8bOsH4xRwwmLmcTiMos6EQ` - Token stored in `/home/node/.openclaw/exec-approvals.json` - Gateway now operational with proper pairing ### Cron Jobs Configured | Job | Schedule (UTC) | HKT | Status | |-----|-----------------|-----|--------| | BTC5m | */81s | - | Running (Cycle #480) | | NYKZ | 0 12 * * 1-5 | 20:30 | Scheduled | | LKZ | 0 18 * * 1-5 | 02:00 | Scheduled | ### Active Trading Systems - **BTC 5m Bot**: Running on Seoul VPS (SSH blocked but bot continues), DRY_RUN=False (live trading enabled)",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T06:24:43.122Z",
+      "lastRecalledAt": "2026-05-29T06:24:43.122Z",
+      "queryHashes": [
+        "db54cfdbca11"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "gateway",
+        "home/node",
+        "openclaw/exec-approvals.json",
+        "1-5",
+        "dry-run",
+        "summary",
+        "fixed",
+        "was"
+      ]
+    },
+    "memory:memory/2026-05-23.md:1:45": {
+      "key": "memory:memory/2026-05-23.md:1:45",
+      "path": "memory/2026-05-23.md",
+      "startLine": 1,
+      "endLine": 45,
+      "source": "memory",
+      "snippet": "# Memory - May 23, 2026 ## BTC 5m Polymarket Trading Bot (Bonereaper) ### Current Status: READY TO BUILD Saba wants to create a Markov Chain BTC 5-minute Up/Down trading bot using PolyClaw skill that replicates Bonereaper strategy (wallet 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30). ### Key Findings **Why `polyclaw markets search \"5m\"` failed:** - Rolling 5m markets are dynamic (lifespan 5 minutes only) - They don't appear in trending/top 100/standard /markets endpoint - Search only scans top 100 markets by volume **Working approach - direct numeric market ID:** ``` Market ID: 2333734 Slug: btc-updown-5m-1779567300 Question: Bitcoin Up or Down - May 23, 4:15PM-4:20PM ET Price: YES=$0.4",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T06:24:43.122Z",
+      "lastRecalledAt": "2026-05-29T07:09:22.385Z",
+      "queryHashes": [
+        "db54cfdbca11",
+        "d90fcfcad437"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "5-minute",
+        "up/down",
+        "trending/top",
+        "100/standard",
+        "btc-updown-5m-1779567300",
+        "15pm-4",
+        "0.4",
+        "may"
+      ]
+    },
+    "memory:memory/2026-05-26.md:1:40": {
+      "key": "memory:memory/2026-05-26.md:1:40",
+      "path": "memory/2026-05-26.md",
+      "startLine": 1,
+      "endLine": 40,
+      "source": "memory",
+      "snippet": "# Memory - 2026-05-26 ## BTC 5m Polymarket Bot Status ### Current Issue: Live Trade Failing - Bot attempted LIVE trade but got error: `{'code': -32001, 'message': \"You've reached the us...\"}` - This is a Polymarket Relayer API usage/rate limit - Position was recorded as $1 loss ### Code Fixes Applied Tonight 1. **Signature Type**: Changed to `SignatureTypeV2.POLY_1271` (value=3) for deposit wallet flow 2. **Funder Address**: `0x7553D3FF69bd8E1AD369e89c5267C3E4a1750a8F` (Relayer/deposit wallet) 3. **Direct py_clob_client_v2**: Using ClobClient directly instead of PolyClaw library 4. **Credentials**: Need L2 credentials (apiKey + secret + passphrase) not just RELAYER_API_KEY ### Bot Config",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T06:24:43.122Z",
+      "lastRecalledAt": "2026-05-29T07:09:22.385Z",
+      "queryHashes": [
+        "db54cfdbca11",
+        "d90fcfcad437"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "usage/rate",
+        "signaturetypev2.poly-1271",
+        "relayer/deposit",
+        "py-clob-client-v2",
+        "relayer-api-key",
+        "btc",
+        "polymarket",
+        "bot"
+      ]
+    },
+    "memory:memory/2026-05-23.md:36:51": {
+      "key": "memory:memory/2026-05-23.md:36:51",
+      "path": "memory/2026-05-23.md",
+      "startLine": 36,
+      "endLine": 51,
+      "source": "memory",
+      "snippet": "5. **Nightly auto-parameter adjustment** - Review log, update MIN_PROB/MIN_EDGE ### Next Steps (Blocked on Saba Input) 1. Saba needs to confirm direction: - Option A: Write Python script (compute slug + fetch market + Markov signal) - Option B: Continue OpenClaw prompt mode 2. After 50 dry-run trades, Saba will provide PRIVATE_KEY for live trading ### PolyClaw Skill Location `/home/node/.openclaw/polyclaw/` ### Notes - This is a Polymarket rolling market, not standard event-based - $23M+ volume mentioned by Saba - 5m markets expire quickly (5 min lifespan)",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T06:24:43.122Z",
+      "lastRecalledAt": "2026-05-29T07:09:22.385Z",
+      "queryHashes": [
+        "db54cfdbca11",
+        "d90fcfcad437"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "auto-parameter",
+        "min-prob/min-edge",
+        "dry-run",
+        "private-key",
+        "home/node",
+        "openclaw/polyclaw",
+        "event-based",
+        "nightly"
+      ]
+    },
+    "memory:memory/2026-05-26.md:33:47": {
+      "key": "memory:memory/2026-05-26.md:33:47",
+      "path": "memory/2026-05-26.md",
+      "startLine": 33,
+      "endLine": 47,
+      "source": "memory",
+      "snippet": "- RELAYER_API_KEY alone is not sufficient for trading - Need to use `client.create_or_derive_api_key()` to get full L2 credentials - funder must be the deposit wallet that holds funds ### Next Steps 1. Verify deposit wallet has pUSD balance for trading 2. Check if Exchange contract approval is needed 3. Consider waiting for API limit reset (30min-2hr) 4. Bot continues running in background ### Wallet Addresses - Signer: `0x450702c28D8EC97FfDE90F986E3C9C70f79Eb56a` - Relayer/Deposit wallet (has $100 on Polymarket): `0x7553D3FF69bd8E1AD369e89c5267C3E4a1750a8F` - Relayer Builder: `0x878a97c2a694468584dc2708165ffb06f8d69b43`",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T06:24:43.122Z",
+      "lastRecalledAt": "2026-05-29T07:09:22.385Z",
+      "queryHashes": [
+        "db54cfdbca11",
+        "d90fcfcad437"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "relayer-api-key",
+        "client.create-or-derive-api-key",
+        "30min-2hr",
+        "relayer/deposit",
+        "alone",
+        "not",
+        "sufficient",
+        "trading"
+      ]
+    },
+    "memory:memory/2026-04-29.md:30:46": {
+      "key": "memory:memory/2026-04-29.md:30:46",
+      "path": "memory/2026-04-29.md",
+      "startLine": 30,
+      "endLine": 46,
+      "source": "memory",
+      "snippet": "- TP1: 3x SL = $600 - TP2: 6x SL = $1,200 - Only trade in Kill Zones (London 03:00-04:00 EST / NY 09:30-10:30 EST) - Contracts: MES/MNQ/M2K/MYM = 2 micro; MCL = 1 contract only ### Current State - Data is fresh (updated via dl_node.js ~21:30 HKT) - NY KZ ended 22:30 HKT - scheduler will auto-fire next morning at 15:00 HKT - User is running everything on their local Jupyter/OpenClaw environment (no local computer) - Server has Node.js but not Python (pip modules were cleared) - User has no local computer - everything runs via OpenClaw/Jupyter on their phone/tablet - Telegram bot token: 8188516378:AAEQ7eXuAITLhKOSxGwlL_8VPRyJq2K-mJA ### User Preferences - \"慢慢做 唔好爆token\" / \"慢慢做 唔好爆context 200",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T06:24:43.122Z",
+      "lastRecalledAt": "2026-05-29T07:09:22.385Z",
+      "queryHashes": [
+        "db54cfdbca11",
+        "d90fcfcad437"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "00-04",
+        "30-10",
+        "mes/mnq/m2k/mym",
+        "dl-node.js",
+        "auto-fire",
+        "jupyter/openclaw",
+        "node.js",
+        "openclaw/jupyter"
+      ]
+    },
+    "memory:memory/2026-05-29.md:1:37": {
+      "key": "memory:memory/2026-05-29.md:1:37",
+      "path": "memory/2026-05-29.md",
+      "startLine": 1,
+      "endLine": 37,
+      "source": "memory",
+      "snippet": "# Memory - 2026-05-29 ## Session Summary ### Gateway Fixed - Gateway was broken with \"pairing required\" and \"token missing\" errors - Fixed by regenerating gateway token: `0lYeNoUfUZFji_9G8gC-P8bOsH4xRwwmLmcTiMos6EQ` - Token stored in `/home/node/.openclaw/exec-approvals.json` - Gateway now operational with proper pairing ### Cron Jobs Configured | Job | Schedule (UTC) | HKT | Status | |-----|-----------------|-----|--------| | BTC5m | */81s | - | Running (Cycle #480) | | NYKZ | 0 12 * * 1-5 | 20:30 | Scheduled | | LKZ | 0 18 * * 1-5 | 02:00 | Scheduled | ### Active Trading Systems - **BTC 5m Bot**: Running on Seoul VPS (SSH blocked but bot continues), DRY_RUN=False (live trading enabled)",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1,
+      "maxScore": 1,
+      "firstRecalledAt": "2026-05-29T07:09:22.385Z",
+      "lastRecalledAt": "2026-05-29T07:09:22.385Z",
+      "queryHashes": [
+        "d90fcfcad437"
+      ],
+      "recallDays": [
+        "2026-05-29"
+      ],
+      "conceptTags": [
+        "gateway",
+        "home/node",
+        "openclaw/exec-approvals.json",
+        "1-5",
+        "dry-run",
+        "summary",
+        "fixed",
+        "was"
+      ]
+    }
+  }
+}

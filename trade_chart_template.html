@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICT Trade Chart - SYMBOLPLACE</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#e6edf3;padding:20px}
+h1{font-size:1.5rem;margin-bottom:4px}
+.stats{display:flex;gap:20px;margin-bottom:16px;font-size:0.9rem;flex-wrap:wrap}
+.stat{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px}
+.stat .label{color:#8b949e;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em}
+.stat .value{font-size:1.4rem;font-weight:bold}
+.positive{color:#3fb950}
+.negative{color:#f85149}
+.neutral{color:#e6edf3}
+.chart-container{background:#161b22;border:1.6px solid #30363d;border-radius:12px;padding:16px;margin-bottom:16px}
+canvas{max-width:100%}
+.legend{display:flex;gap:16px;margin-top:8px;font-size:0.8rem;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-dot{width:10px;height:10px;border-radius:50%}
+.trade-list{margin-top:16px}
+.trade-item{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #21262d;font-size:0.85rem}
+.trade-item:last-child{border-bottom:none}
+.trade-item:hover{background:#1c2128}
+.trade-num{color:#8b949e;min-width:30px}
+.trade-dir{font-weight:bold;min-width:50px}
+.long{color:#58a6ff}
+.short{color:#f97583}
+.trade-pnl{margin-left:auto;font-weight:bold}
+.win{color:#3fb950}
+.loss{color:#f85149}
+.badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:8px}
+.badge-win{background:rgba(63,185,80,0.2);color:#3fb950}
+.badge-loss{background:rgba(248,81,73,0.2);color:#f85149}
+.badge-kz{background:rgba(255,200,0,0.15);color:#ffc800}
+#filter{background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:6px 12px;border-radius:6px;font-size:0.85rem}
+</style>
+</head>
+<body>
+<h1>📈 ICT Trade Chart — <span id="sym">SYMBOLPLACE</span></h1>
+<div class="stats">
+<div class="stat"><div class="label">Total PnL</div><div class="value" id="totalPnl">—</div></div>
+<div class="stat"><div class="label">Win Rate</div><div class="value" id="winRate">—</div></div>
+<div class="stat"><div class="label">Total Trades</div><div class="value" id="totalTrades">—</div></div>
+<div class="stat"><div class="label">Wins / Losses</div><div class="value" id="winsLosses">—</div></div>
+</div>
+<label style="margin-bottom:8px;display:block">Filter: <select id="filter" onchange="render()">
+<option value="all">All Trades</option>
+<option value="wins">Wins Only</option>
+<option value="losses">Losses Only</option>
+<option value="kz">Kill Zone Only</option>
+</select></label>
+<div class="chart-container"><canvas id="chart"></canvas></div>
+<div class="legend">
+<div class="legend-item"><div class="legend-dot" style="background:#26a69a"></div>Bullish Candle</div>
+<div class="legend-item"><div class="legend-dot" style="background:#ef5350"></div> Bearish Candle</div>
+<div class="legend-item"><div class="legend-dot" style="background:#2196F3"></div> Long Entry</div>
+<div class="legend-item"><div class="legend-dot" style="background:#FF9800"></div> Short Entry</div>
+<div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> TP Hit (Win)</div>
+<div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> SL Hit (Loss)</div>
+</div>
+<div class="trade-list" id="tradeList"></div>
+
+<script>
+const SYM = 'SYMPLACE';
+// Price data - populated by Node.js
+const priceData = PRICE_DATA_PLACEholder;
+// Trades data - populated by Node.js
+const tradesData = TRADES_DATA_PLaceholder;
+
+let chart;
+const filterEl = document.getElementById('filter');
+const symEl = document.getElementById('sym');
+symEl.textContent = SYM;
+
+const wins = tradesData.filter(t => t.pnl > 0);
+const losses = tradesData.filter(t => t.pnl < 0);
+const totalPnL = tradesData.reduce((a, t) => a + t.pnl, 0);
+const wr = tradesData.length > 0 ? (wins.length / tradesData.length * 100) : 0;
+
+document.getElementById('totalPnl').textContent = '$' + totalPnL.toLocaleString('en-US', {minimumFractionDigits:0});
+document.getElementById('totalPnl').className = 'value ' + (totalPnL >= 0 ? 'positive' : 'negative');
+document.getElementById('winRate').textContent = wr.toFixed(1) + '%';
+document.getElementById('winRate').className = 'value ' + (wr >= 50 ? 'positive' : 'negative');
+document.getElementById('totalTrades').textContent = tradesData.length;
+document.getElementById('winsLosses').textContent = wins.length + ' / ' + losses.length;
+document.getElementById('winsLosses').className = 'value ' + (wins.length >= losses.length ? 'positive' : 'negative');
+
+function filterTrades() {
+    const f = filterEl.value;
+    if (f === 'wins') return tradesData.filter(t => t.pnl > 0);
+    if (f === 'losses') return tradesData.filter(t => t.pnl < 0);
+    if (f === 'kz') return tradesData.filter(t => t.kz && t.kz !== '');
+    return tradesData;
+}
+
+function render() {
+    const filtered = filterTrades();
+
+    // Build trade list HTML
+    const listEl = document.getElementById('tradeList');
+    listEl.innerHTML = filtered.slice(0, 50).map((t, i) => `
+        <div class="trade-item">
+            <span class="trade-num">${i + 1}.</span>
+            <span class="trade-dir ${t.direction === 'Long' ? 'long' : 'short'}">${t.direction}</span>
+            <span>${t.date.split(' ')[0]}</span>
+            <span style="color:#8b949e">Entry:${t.entry.toFixed(4)}</span>
+            <span style="color:#8b949e">Exit:${t.exit.toFixed(4)}</span>
+            ${t.kz ? '<span class="badge badge-kz">' + t.kz + '</span>' : ''}
+            <span class="trade-pnl ${t.pnl > 0 ? 'win' : 'loss'}">$${t.pnl.toFixed(0)}</span>
+        </div>
+    `).join('');
+    if (filtered.length > 50) listEl.innerHTML += '<div class="trade-item" style="color:#8b949e">...and ' + (filtered.length - 50) + ' more</div>';
+
+    // Candlestick chart
+    const recent = priceData.slice(-Math.min(priceData.length, 500));
+    const candleLabels = recent.map(p => p.datetime.split(' ')[0] + ' ' + p.datetime.split(' ')[1].substring(0,5));
+    const o = recent.map(p => p.open);
+    const h = recent.map(p => p.high);
+    const l = recent.map(p => p.low);
+    const c = recent.map(p => p.close);
+
+    // Trade entry markers
+    const tradeEntries = filtered.map(t => {
+        const idx = recent.findIndex(p => p.datetime.startsWith(t.date.split(' ')[0]));
+        return idx >= 0 ? idx : -1;
+    }).filter(i => i >= 0);
+
+    const entryPrices = filtered.map(t => {
+        const idx = recent.findIndex(p => p.datetime.startsWith(t.date.split(' ')[0]));
+        return idx >= 0 ? recent[idx].close : null;
+    });
+
+    const colors = recent.map((p, i) => p.close >= p.open ? 'rgba(38,166,154,0.8)' : 'rgba(239,83,80,0.8)');
+    const borders = recent.map((p, i) => p.close >= p.open ? '#26a69a' : '#ef5350');
+
+    if (chart) chart.destroy();
+
+    const ctx = document.getElementById('chart').getContext('2d');
+    chart = new Chart(ctx, {
+        type: 'candlestick',
+        data: {
+            labels: candleLabels,
+            datasets: [{
+                label: 'Price',
+                data: o.map((open, i) => ({ open, high: h[i], low: l[i], close: c[i] })),
+                color: colors,
+                borderColor: borders,
+                borderWidth: 1,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const d = ctx.raw;
+                            return `O:${d.open.toFixed(2)} H:${d.high.toFixed(2)} L:${d.low.toFixed(2)} C:${d.close.toFixed(2)}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { maxTicksLimit: 15, color: '#8b949e', font: { size: 10 } },
+                    grid: { color: '#21262d' }
+                },
+                y: {
+                    ticks: { color: '#8b949e', font: { size: 10 } },
+                    grid: { color: '#21262d' }
+                }
+            }
+        }
+    });
+
+    // Add trade markers as annotation plugin (inline via custom drawing)
+    setTimeout(() => {
+        const xAxis = chart.scales.x;
+        const yAxis = chart.scales.y;
+        const ctx2 = document.getElementById('chart').getContext('2d');
+
+        filtered.forEach((t, ti) => {
+            const idx = recent.findIndex(p => p.datetime.startsWith(t.date.split(' ')[0]));
+            if (idx < 0) return;
+            const x = xAxis.getPixelForValue(idx);
+            const y = yAxis.getPixelForValue(t.entry);
+            const isWin = t.pnl > 0;
+
+            // Draw entry arrow
+            ctx2.beginPath();
+            ctx2.fillStyle = t.direction === 'Long' ? '#2196F3' : '#FF9800';
+            ctx2.fillStyle = isWin ? '#3fb950' : '#f85149';
+            ctx2.font = 'bold 14px Arial';
+            ctx2.fillText(t.direction === 'Long' ? '▲' : '▼', x - 4, y + 4);
+
+            // Draw exit arrow
+            const exIdx = recent.findIndex(p => p.datetime.startsWith(t.exit.toFixed(4) === '0.0000' ? t.date.split(' ')[0] : t.date.split(' ')[0]));
+            if (t.exit > 0) {
+                const exitIdx = Math.min(idx + 1, recent.length - 1);
+                const ex2 = xAxis.getPixelForValue(exitIdx);
+                const ey = yAxis.getPixelForValue(t.exit);
+                ctx2.beginPath();
+                ctx2.fillStyle = isWin ? '#3fb950' : '#f85149';
+                ctx2.fillText('●', ex2 - 4, ey + 4);
+            }
+        });
+    }, 500);
+}
+
+render();
+</script>
+</body>
+</html>

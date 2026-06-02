@@ -1,0 +1,2 @@
+30 12 * * 1-5 cd /home/node/.openclaw/workspace && /usr/bin/python3 xgb_live.py >> /tmp/xgb_live.log 2>&1
+0 6 * * 1-5 cd /home/node/.openclaw/workspace && /usr/bin/python3 xgb_live.py >> /tmp/xgb_live.log 2>&1
