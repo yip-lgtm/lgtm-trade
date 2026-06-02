@@ -529,29 +529,78 @@ async def run_trading_cycle():
 async def nightly_review():
     global MIN_PROB, STATE_HISTORY
     
-    print(f"\n🌙 NIGHTLY REVIEW after {len(STATE_HISTORY)} cycles")
+    # === 50-Cycle Dynamic Auto-Adjust ===
+    print(f"\n🔄 50-CYCLE AUTO-ADJUST after {len(STATE_HISTORY)} cycles")
     
-    probs = [e.get('prob_continue', 0) for e in STATE_HISTORY]
+    # 1. Stats on recent cycles
+    recent = STATE_HISTORY[-TARGET_CYCLES:]
+    probs = [e.get('prob_continue', 0) for e in recent]
     max_prob = max(probs) if probs else 0
     avg_prob = sum(probs) / len(probs) if probs else 0
     
-    print(f"[REVIEW] max p̂={max_prob:.3f}, avg={avg_prob:.3f}, MIN_PROB={MIN_PROB}")
+    # 2. Signal rate
+    signal_count = sum(1 for e in recent if e.get('signal'))
+    signal_rate = signal_count / len(recent) if recent else 0
     
-    if max_prob < MIN_PROB * 0.7 and MIN_PROB > 0.75:
-        old = MIN_PROB
-        MIN_PROB = max(0.75, MIN_PROB - 0.05)
-        print(f"[REVIEW] Adjusted MIN_PROB: {old} → {MIN_PROB}")
+    # 3. Filter reasons (what's blocking signals)
+    reasons = {}
+    for e in recent:
+        if not e.get('signal'):
+            r = e.get('reason', 'Unknown')
+            reasons[r] = reasons.get(r, 0) + 1
+    
+    print(f"[ADJUST] p̂ max={max_prob:.3f} avg={avg_prob:.3f} signal_rate={signal_rate*100:.1f}%")
+    print(f"[ADJUST] Blocked by: {reasons}")
+    
+    old_prob = MIN_PROB
+    adjustment_reason = ""
+    
+    # === ADJUSTMENT RULES ===
+    
+    # Rule 1: If max p̂ is very low vs current threshold, lower it
+    if max_prob < MIN_PROB * 0.7:
+        new_prob = max(0.45, MIN_PROB - 0.03)
+        if new_prob < MIN_PROB:
+            MIN_PROB = new_prob
+            adjustment_reason = f"max p̂ {max_prob:.3f} too low, lower to {MIN_PROB:.2f}"
+    
+    # Rule 2: If signal rate is too high (>30%), raise threshold
+    elif signal_rate > 0.30:
+        new_prob = min(0.75, MIN_PROB + 0.02)
+        if new_prob > MIN_PROB:
+            MIN_PROB = new_prob
+            adjustment_reason = f"signal rate {signal_rate*100:.1f}% too high, raise to {MIN_PROB:.2f}"
+    
+    # Rule 3: If max p̂ is well above threshold AND signal rate is low, can lower
+    elif max_prob > MIN_PROB * 1.3 and signal_rate < 0.10:
+        new_prob = max(0.45, MIN_PROB - 0.02)
+        if new_prob < MIN_PROB:
+            MIN_PROB = new_prob
+            adjustment_reason = f"max p̂ {max_prob:.3f} high, signal rate low, lower to {MIN_PROB:.2f}"
+    
+    # Rule 4: If no signals at all, lower more aggressively
+    elif signal_count == 0 and len(recent) >= 30:
+        new_prob = max(0.45, MIN_PROB - 0.05)
+        if new_prob < MIN_PROB:
+            MIN_PROB = new_prob
+            adjustment_reason = f"0 signals in 50 cycles, lower to {MIN_PROB:.2f}"
+    
+    if adjustment_reason:
+        print(f"[ADJUST] {old_prob:.2f} → {MIN_PROB:.2f} ({adjustment_reason})")
         save_config()
+    else:
+        print(f"[ADJUST] No change needed, MIN_PROB={MIN_PROB:.2f}")
     
-    msg = f"""🌙 <b>Nightly Review</b>
+    msg = f"""🔄 <b>50-Cycle Auto-Adjust</b>
 
-📊 Cycles: {len(STATE_HISTORY)}
-📈 Max p̂: {max_prob:.3f}
-🔧 MIN_PROB: {MIN_PROB}
-🔧 MIN_EDGE: {MIN_EDGE}
+📊 Cycles: {len(recent)}
+📈 p̂ max: {max_prob:.3f} avg: {avg_prob:.3f}
+🎯 Signal rate: {signal_rate*100:.1f}% ({signal_count}/{len(recent)})
+🔧 MIN_PROB: {old_prob:.2f} → {MIN_PROB:.2f}
+{f"📝 {adjustment_reason}" if adjustment_reason else "✅ No change"}
 
-Continuing...
-[DRY_RUN]"""
+Top block reasons:
+{chr(10).join(f"  • {k}: {v}" for k, v in sorted(reasons.items(), key=lambda x: -x[1])[:3])}"""
     
     await send_telegram(msg)
     
