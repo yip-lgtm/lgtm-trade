@@ -938,8 +938,6 @@ async def run_trading_cycle():
                     json.dump(relax_state, f)
             except Exception:
                 pass
-        # End signal_active check
-            pass
 
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
 
@@ -983,37 +981,41 @@ async def run_trading_cycle():
 
 ⏰ <code>btc-updown-5m-{next_window}</code>"""
 
-    if DRY_RUN and signal_active:
-        # Manual trading mode - clear actionable signal
-        # Determine outcome and entry price
-        if direction == 'UP':
-            outcome = 'YES'
-            entry_price = market['yes_price']
-            # UP signals historically less accurate (47.9% WR) - half size
-            position_size = min(MAX_POSITION, 0.50)  # $0.50 base
+        if DRY_RUN and signal_active:
+            # Manual trading mode - clear actionable signal
+            # Determine outcome and entry price
+            if direction == 'UP':
+                outcome = 'YES'
+                entry_price = market['yes_price']
+                # UP signals historically less accurate (47.9% WR) - half size
+                position_size = min(MAX_POSITION, 0.50)  # $0.50 base
+            else:
+                outcome = 'NO'
+                entry_price = market['no_price']
+                # DOWN signals more accurate (60.3% WR) - bigger size
+                position_size = min(MAX_POSITION, 1.50)  # $1.50 base
+
+            msg += f"\n\n📱 <b>MANUAL TRADE</b>"
+            msg += f"\n🔹 <b>Action: Buy {outcome} @ {entry_price:.3f}</b>"
+            msg += f"\n🔹 Sizing: ${position_size:.2f}"
+            msg += f"\n🔹 Market ends: ~5 min"
+            msg += f"\n🔹 Target: Win → +${position_size:.2f} (R:R 1:2)"
+            msg += f"\n🔹 Risk: -${position_size:.2f}"
+            msg += f"\n🔹 R:R: 1:2 (binary)"
+            msg += f"\n\n⏰ <code>{market.get('slug', 'btc-updown-5m')}</code>"
+        elif not DRY_RUN and signal_active:
+            # LIVE TRADING - execute if signal active
+            trade_result = await execute_live_trade(market, direction, prob_continue, edge, q, msg)
+            msg = trade_result['message']
+
+        if signal_active:
+            await send_telegram(msg, alert=True)  # Ring phone on signal!
+            # Log signal to trades file for settlement tracking
+            log_pending_trade(market, direction, prob_continue, edge, position_size)
         else:
-            outcome = 'NO'
-            entry_price = market['no_price']
-            # DOWN signals more accurate (60.3% WR) - bigger size
-            position_size = min(MAX_POSITION, 1.50)  # $1.50 base
-
-        msg += f"\n\n📱 <b>MANUAL TRADE</b>"
-        msg += f"\n🔹 <b>Action: Buy {outcome} @ {entry_price:.3f}</b>"
-        msg += f"\n🔹 Sizing: ${position_size:.2f}"
-        msg += f"\n🔹 Market ends: ~5 min"
-        msg += f"\n🔹 Target: Win → +${position_size:.2f} (R:R 1:2)"
-        msg += f"\n🔹 Risk: -${position_size:.2f}"
-        msg += f"\n🔹 R:R: 1:2 (binary)"
-        msg += f"\n\n⏰ <code>{market.get('slug', 'btc-updown-5m')}</code>"
-    elif not DRY_RUN and signal_active:
-        # LIVE TRADING - execute if signal active
-        trade_result = await execute_live_trade(market, direction, prob_continue, edge, q, msg)
-        msg = trade_result['message']
-
-    if signal_active:
-        await send_telegram(msg, alert=True)  # Ring phone on signal!
-        # Log signal to trades file for settlement tracking
-        log_pending_trade(market, direction, prob_continue, edge, position_size)
+            print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason} (no alert)")
+    elif signal_active and is_duplicate:
+        print(f"[SKIP] Duplicate signal for {current_slug}")
     else:
         print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason} (no alert)")
 
