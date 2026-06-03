@@ -735,14 +735,35 @@ async def run_trading_cycle():
     # Daily summary - check if new day
     current_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     last_daily_date = None
+    last_eod_date = None
     try:
         if os.path.exists(DAILY_SUMMARY_FILE):
             with open(DAILY_SUMMARY_FILE) as f:
-                last_daily_date = json.load(f).get('last_sent_date')
+                data = json.load(f)
+                last_daily_date = data.get('last_sent_date')
+                last_eod_date = data.get('last_eod_date')
     except:
         pass
+
+    now = datetime.now(timezone.utc)
+    current_date = now.strftime('%Y-%m-%d')
+
+    # EOD summary at 23:55 UTC
+    if now.hour == 23 and now.minute >= 55 and last_eod_date != current_date:
+        try:
+            await send_eod_summary()
+            data = {}
+            if os.path.exists(DAILY_SUMMARY_FILE):
+                with open(DAILY_SUMMARY_FILE) as f:
+                    data = json.load(f)
+            data['last_eod_date'] = current_date
+            with open(DAILY_SUMMARY_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"[EOD] Error: {e}")
+
+    # Daily summary at 00:00 UTC (new day)
     if last_daily_date != current_date:
-        # New day detected - send summary
         try:
             await send_daily_summary_if_new()
         except Exception as e:
@@ -770,8 +791,9 @@ async def run_trading_cycle():
             )
         await send_telegram(settle_msg)
 
-    # Print + send cumulative stats every 10 cycles (~13 min)
-    if CYCLE_COUNT % 10 == 0 and CYCLE_COUNT > 0:
+    # Auto-send cumulative stats DISABLED (too noisy)
+    # Daily summary is sent at 00:00 UTC instead
+    if False and CYCLE_COUNT % 10 == 0 and CYCLE_COUNT > 0:
         stats = get_cumulative_stats()
         if stats and stats.get('completed', 0) > 0:
             print(f"\n📊 CUMULATIVE STATS:")
@@ -1086,6 +1108,29 @@ def get_daily_summary(force_new=False):
     except Exception as e:
         print(f"[DAILY] Error: {e}")
         return None
+
+async def send_eod_summary():
+    """Send end-of-day summary at 23:55 UTC"""
+    summary = get_daily_summary(force_new=True)
+    if not summary:
+        return False
+
+    msg = (
+        f"🌙 <b>End-of-Day Summary - {summary['date']}</b>\n\n"
+        f"Trades: {summary['total']} ({summary['completed']} completed, {summary['pending']} pending)\n"
+        f"<b>WR: {summary['wr']:.1f}%</b> ({summary['wins']}W / {summary['losses']}L)\n"
+        f"<b>P&L: ${summary['pnl']:+.2f}</b>\n\n"
+        f"<b>UP:</b>   {summary['up_count']} signals, {summary['up_wins']}W, ${summary['up_pnl']:+.2f}\n"
+        f"<b>DOWN:</b> {summary['down_count']} signals, {summary['down_wins']}W, ${summary['down_pnl']:+.2f}\n"
+    )
+    if summary['best']:
+        msg += f"\nBest:  {summary['best']['direction']} +${summary['best']['pnl']:.2f} @ {summary['best']['time'][11:16]}"
+    if summary['worst'] and summary['worst'] != summary['best']:
+        msg += f"\nWorst: {summary['worst']['direction']} ${summary['worst']['pnl']:+.2f} @ {summary['worst']['time'][11:16]}"
+
+    await send_telegram(msg)
+    print(f"[EOD] Summary sent for {summary['date']}: WR={summary['wr']:.1f}%, P&L=${summary['pnl']:+.2f}")
+    return True
 
 async def send_daily_summary_if_new():
     """Send daily summary via Telegram if it hasn't been sent today"""
