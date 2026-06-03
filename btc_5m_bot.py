@@ -433,7 +433,30 @@ def log_pending_trade(market, direction, prob_continue, edge, position_size):
         print(f"[TRADE] Log error: {e}")
 
 async def fetch_market_by_slug(slug):
-    """Fetch market data by slug, return outcome prices"""
+    """Fetch market data by slug, return outcome prices.
+    Tries slug first, then tries with time-range query as backup."""
+    # Try 1: Direct slug
+    market = await _fetch_market_direct(slug)
+    if market:
+        return market
+
+    # Try 2: If slug has timestamp suffix, try nearby timestamps
+    try:
+        if '-5m-' in slug:
+            base, ts_str = slug.rsplit('-', 1)
+            ts = int(ts_str)
+            for offset in [0, 300, -300, 600, -600]:
+                alt_slug = f"{base}-{ts + offset}"
+                market = await _fetch_market_direct(alt_slug)
+                if market:
+                    return market
+    except:
+        pass
+
+    return None
+
+async def _fetch_market_direct(slug):
+    """Direct market fetch by slug"""
     try:
         url = f"{GAMMA_API}/markets?slug={slug}"
         req = urllib.request.Request(url)
@@ -483,35 +506,37 @@ async def settle_pending_trades_async():
                 if now_ts > trade_time + 300:  # 5 min passed, market should be settled
                     # Fetch actual market result
                     market = await fetch_market_by_slug(t['slug'])
-                    if market and market.get('closed'):
-                        # Determine winner
-                        # If YES price is 1.0 (or close), UP won
-                        # If NO price is 1.0 (or close), DOWN won
+                    if market:
+                        # Determine winner - either by closed flag OR by extreme price
                         yes_p = market.get('yes_price', 0.5)
                         no_p = market.get('no_price', 0.5)
-                        if yes_p > 0.95:
-                            actual_dir = 'UP'
-                        elif no_p > 0.95:
-                            actual_dir = 'DOWN'
+                        is_closed = market.get('closed', False)
+                        # If extreme price (>0.95 or <0.05), market is decided even if not closed
+                        if is_closed or yes_p > 0.92 or no_p > 0.92:
+                            if yes_p > 0.92:
+                                actual_dir = 'UP'
+                            elif no_p > 0.92:
+                                actual_dir = 'DOWN'
+                            else:
+                                # Both extreme - default to no_price being decisive
+                                actual_dir = 'DOWN' if no_p > yes_p else 'UP'
+                            t['result'] = 'WIN' if t['direction'] == actual_dir else 'LOSS'
+                            # P&L (1:2 R:R, win = position_size, lose = -position_size)
+                            if t['result'] == 'WIN':
+                                t['pnl'] = t['position_size']
+                                wins += 1
+                            else:
+                                t['pnl'] = -t['position_size']
+                                losses += 1
+                            t['status'] = 'settled'
+                            t['settled_at'] = datetime.now(timezone.utc).isoformat()
+                            t['actual_dir'] = actual_dir
+                            t['final_yes'] = yes_p
+                            t['final_no'] = no_p
+                            settled += 1
+                            print(f"[SETTLE] {t['id']}: {t['direction']} vs actual {actual_dir} → {t['result']} (P&L ${t['pnl']:+.2f})")
                         else:
-                            actual_dir = 'UNKNOWN'
-                        if actual_dir == 'UNKNOWN':
-                            continue  # skip for now
-                        t['result'] = 'WIN' if t['direction'] == actual_dir else 'LOSS'
-                        # P&L (binary R:R 1:2, $0.495 win, $0.505 loss per $1)
-                        if t['result'] == 'WIN':
-                            t['pnl'] = t['position_size']  # 1:2 R:R, win = position size
-                            wins += 1
-                        else:
-                            t['pnl'] = -t['position_size']  # 1:2 R:R, lose = -position size
-                            losses += 1
-                        t['status'] = 'settled'
-                        t['settled_at'] = datetime.now(timezone.utc).isoformat()
-                        t['actual_dir'] = actual_dir
-                        t['final_yes'] = yes_p
-                        t['final_no'] = no_p
-                        settled += 1
-                        print(f"[SETTLE] {t['id']}: {t['direction']} vs actual {actual_dir} → {t['result']} (P&L ${t['pnl']:+.2f})")
+                            new_pending += 1
                     else:
                         new_pending += 1
                 else:
