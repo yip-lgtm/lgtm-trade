@@ -56,7 +56,7 @@ VOL_MULT = 0.6
 
 # === DYNAMIC ADJUSTMENT ===
 DYNAMIC_MODE = True  # Auto-relax filters when no signals
-LAST_SIGNAL_TIME = None  # Track when last signal triggered
+LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Initialize to start time so relax works from start
 SIGNAL_FREE_MIN_THRESHOLD = 30  # Start relaxing after 30 min no signal
 RELAX_STEP_MIN = 15  # Adjust every 15 min
 MIN_PROB_FLOOR = 0.45  # Don't go below this
@@ -444,6 +444,7 @@ def dynamic_relax_filters():
     # Calculate relaxation steps (one per RELAX_STEP_MIN)
     steps = int(elapsed_min / RELAX_STEP_MIN)
 
+    # Relax from initial config values, not from current (cumulative)
     old_min_prob = MIN_PROB
     old_atr_mult = ATR_MULT
     old_vol_mult = VOL_MULT
