@@ -369,9 +369,13 @@ async def fetch_polymarket_market(window_ts):
         pass
     return None
 
-async def send_telegram(message):
+async def send_telegram(message, alert=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}).encode()
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+    if alert:
+        # Disable silent notification, ring phone
+        payload["disable_notification"] = False
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=10):
@@ -496,7 +500,11 @@ async def run_trading_cycle():
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
     
     # 7. Telegram
-    msg = f"""📊 <b>BTC 5m Cycle #{CYCLE_COUNT}</b>
+    if signal_active:
+        # High-priority alert format
+        msg = f"""🚨🚨🚨 <b>SIGNAL NOW!</b> 🚨🚨🚨
+
+📊 <b>BTC 5m Cycle #{CYCLE_COUNT}</b>
 
 🔹 State: <code>{state}</code> (n={state_n})
 🔹 Last Dir: <b>{last_dir}</b>
@@ -531,7 +539,7 @@ async def run_trading_cycle():
         msg = trade_result['message']
     
     if signal_active:
-        await send_telegram(msg)
+        await send_telegram(msg, alert=True)  # Ring phone on signal!
     else:
         print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason} (no alert)")
 
@@ -634,7 +642,7 @@ async def nightly_review():
 Top block reasons:
 {chr(10).join(f"  • {k}: {v}" for k, v in sorted(reasons.items(), key=lambda x: -x[1])[:3])}"""
     
-    await send_telegram(msg)
+    await send_telegram(msg, alert=True)  # Daily summary also alerts
     
     STATE_HISTORY = []
     save_state()
