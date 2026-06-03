@@ -45,7 +45,7 @@ except ImportError:
 # === CONFIG ===
 DRY_RUN = True  # SIGNAL ONLY - User trades manually
 MIN_PROB = 0.50
-MIN_EDGE = 0.03
+MIN_EDGE = 0.015  # Lowered from 0.03 to capture more signals in low-vol
 MAX_POSITION = 5.0  # Max $5 per trade
 MAX_DAILY_LOSS = 30.0  # Max $30 daily loss
 CHECK_INTERVAL = 81
@@ -59,7 +59,7 @@ DYNAMIC_MODE = True  # Auto-relax filters when no signals
 LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Initialize to start time so relax works from start
 SIGNAL_FREE_MIN_THRESHOLD = 30  # Start relaxing after 30 min no signal
 RELAX_STEP_MIN = 15  # Adjust every 15 min
-MIN_PROB_FLOOR = 0.45  # Don't go below this
+MIN_PROB_FLOOR = 0.42  # Don't go below this
 ATR_MULT_FLOOR = 0.4  # Don't go below this
 VOL_MULT_FLOOR = 0.3  # Don't go below this
 PROB_RELAX_AMOUNT = 0.02  # Lower MIN_PROB by this per step
