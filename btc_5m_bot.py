@@ -696,9 +696,26 @@ async def run_trading_cycle():
     settle_result = await settle_pending_trades_async()
     if settle_result and settle_result.get('settled', 0) > 0:
         print(f"[SETTLE] Settled {settle_result['settled']} trades, {settle_result['pending']} pending")
+        # Auto-send trade settlement summary
+        settle_msg = (
+            f"📈 <b>Trades Settled</b>\n\n"
+            f"Settled: {settle_result['settled']}\n"
+            f"  W: {settle_result['wins']}\n"
+            f"  L: {settle_result['losses']}\n"
+            f"Pending: {settle_result['pending']}"
+        )
+        # Include cumulative stats if any completed
+        stats = get_cumulative_stats()
+        if stats and stats.get('completed', 0) > 0:
+            settle_msg += (
+                f"\n\n📊 <b>Cumulative:</b>\n"
+                f"WR: {stats['wr']:.1f}% ({stats['wins']}W / {stats['losses']}L)\n"
+                f"P&L: <b>${stats['pnl']:+.2f}</b>"
+            )
+        await send_telegram(settle_msg)
 
-    # Print cumulative stats every 10 cycles
-    if CYCLE_COUNT % 10 == 0:
+    # Print + send cumulative stats every 10 cycles (~13 min)
+    if CYCLE_COUNT % 10 == 0 and CYCLE_COUNT > 0:
         stats = get_cumulative_stats()
         if stats and stats.get('completed', 0) > 0:
             print(f"\n📊 CUMULATIVE STATS:")
@@ -707,6 +724,16 @@ async def run_trading_cycle():
             print(f"   P&L: ${stats['pnl']:+.2f}")
             print(f"   UP:   {stats['up_count']} signals, {stats['up_wr']:.1f}% WR")
             print(f"   DOWN: {stats['down_count']} signals, {stats['down_wr']:.1f}% WR\n")
+            # Auto-send stats via Telegram
+            stats_msg = (
+                f"📊 <b>BTC 5m Cumulative Stats</b>\n\n"
+                f"Trades: {stats['total_logged']} ({stats['pending']} pending)\n"
+                f"WR: <b>{stats['wr']:.1f}%</b> ({stats['wins']}W / {stats['losses']}L)\n"
+                f"P&L: <b>${stats['pnl']:+.2f}</b>\n\n"
+                f"UP:   {stats['up_count']} signals, {stats['up_wr']:.1f}% WR\n"
+                f"DOWN: {stats['down_count']} signals, {stats['down_wr']:.1f}% WR"
+            )
+            await send_telegram(stats_msg)
 
     # Dynamic relax - if no signals for a while, lower thresholds
     relax_info = dynamic_relax_filters()
