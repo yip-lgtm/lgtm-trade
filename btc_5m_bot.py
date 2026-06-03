@@ -615,16 +615,16 @@ def dynamic_relax_filters():
         return None
 
     # Load persisted state (last signal time, accumulated no-signal minutes)
-    state = {}
+    relax_state = {}
     try:
         if os.path.exists(RELAX_FILE):
             with open(RELAX_FILE) as f:
-                state = json.load(f)
+                relax_state = json.load(f)
     except:
         pass
 
-    no_signal_min = state.get('no_signal_min', 0)
-    last_signal_iso = state.get('last_signal_time')
+    no_signal_min = relax_state.get('no_signal_min', 0)
+    last_signal_iso = relax_state.get('last_signal_time')
     if last_signal_iso:
         try:
             LAST_SIGNAL_TIME = datetime.fromisoformat(last_signal_iso)
@@ -637,10 +637,10 @@ def dynamic_relax_filters():
             elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(last_signal_iso)).total_seconds() / 60
             if elapsed < SIGNAL_FREE_MIN_THRESHOLD:
                 # Reset accumulator
-                state['no_signal_min'] = 0
+                relax_state['no_signal_min'] = 0
                 try:
                     with open(RELAX_FILE, 'w') as f:
-                        json.dump(state, f)
+                        json.dump(relax_state, f)
                 except:
                     pass
                 return None
@@ -650,11 +650,11 @@ def dynamic_relax_filters():
 
     # Increment by 81s (one cycle) and persist
     no_signal_min = max(no_signal_min, 0) + 81.0 / 60.0
-    state['no_signal_min'] = no_signal_min
-    state['last_signal_time'] = datetime.now(timezone.utc).isoformat() if LAST_SIGNAL_TIME is None else state.get('last_signal_time')
+    relax_state['no_signal_min'] = no_signal_min
+    relax_state['last_signal_time'] = datetime.now(timezone.utc).isoformat() if LAST_SIGNAL_TIME is None else relax_state.get('last_signal_time')
     try:
         with open(RELAX_FILE, 'w') as f:
-            json.dump(state, f)
+            json.dump(relax_state, f)
     except:
         pass
 
@@ -790,14 +790,14 @@ async def run_trading_cycle():
         LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Track for dynamic relax
         # Persist to relax state file
         try:
-            state = {}
+            relax_state = {}
             if os.path.exists(RELAX_FILE):
                 with open(RELAX_FILE) as f:
-                    state = json.load(f)
-            state['last_signal_time'] = LAST_SIGNAL_TIME.isoformat()
-            state['no_signal_min'] = 0  # Reset accumulator
+                    relax_state = json.load(f)
+            relax_state['last_signal_time'] = LAST_SIGNAL_TIME.isoformat()
+            relax_state['no_signal_min'] = 0  # Reset accumulator
             with open(RELAX_FILE, 'w') as f:
-                json.dump(state, f)
+                json.dump(relax_state, f)
         except:
             pass
 
