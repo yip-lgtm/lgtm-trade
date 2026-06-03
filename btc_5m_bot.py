@@ -70,6 +70,10 @@ TELEGRAM_CHAT_ID = "8475453959"
 GAMMA_API = "https://gamma-api.polymarket.com"
 
 # State
+# State files for persistence across script restarts
+STATE_FILE = '/tmp/btc_5m_state.json'
+CONFIG_FILE = '/tmp/btc_5m_config.json'
+RELAX_FILE = '/tmp/btc_5m_relax.json'  # Persist relax state across restarts
 BTC_KLINES = []
 TRANSITION_MATRIX = {}
 STATE_HISTORY = []
@@ -431,18 +435,62 @@ def save_config():
         pass
 
 def dynamic_relax_filters():
-    """If no signals for a while, gradually relax thresholds"""
+    """If no signals for a while, gradually relax thresholds.
+    State is persisted to disk to survive bash loop restarts."""
     global MIN_PROB, ATR_MULT, VOL_MULT, LAST_SIGNAL_TIME
 
-    if not DYNAMIC_MODE or LAST_SIGNAL_TIME is None:
+    if not DYNAMIC_MODE:
         return None
 
-    elapsed_min = (datetime.now(timezone.utc) - LAST_SIGNAL_TIME).total_seconds() / 60
-    if elapsed_min < SIGNAL_FREE_MIN_THRESHOLD:
+    # Load persisted state (last signal time, accumulated no-signal minutes)
+    state = {}
+    try:
+        if os.path.exists(RELAX_FILE):
+            with open(RELAX_FILE) as f:
+                state = json.load(f)
+    except:
+        pass
+
+    no_signal_min = state.get('no_signal_min', 0)
+    last_signal_iso = state.get('last_signal_time')
+    if last_signal_iso:
+        try:
+            LAST_SIGNAL_TIME = datetime.fromisoformat(last_signal_iso)
+        except:
+            pass
+
+    # If we just had a signal (within 30 min), no relax needed
+    if last_signal_iso:
+        try:
+            elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(last_signal_iso)).total_seconds() / 60
+            if elapsed < SIGNAL_FREE_MIN_THRESHOLD:
+                # Reset accumulator
+                state['no_signal_min'] = 0
+                try:
+                    with open(RELAX_FILE, 'w') as f:
+                        json.dump(state, f)
+                except:
+                    pass
+                return None
+            no_signal_min = elapsed
+        except:
+            pass
+
+    # Increment by 81s (one cycle) and persist
+    no_signal_min = max(no_signal_min, 0) + 81.0 / 60.0
+    state['no_signal_min'] = no_signal_min
+    state['last_signal_time'] = datetime.now(timezone.utc).isoformat() if LAST_SIGNAL_TIME is None else state.get('last_signal_time')
+    try:
+        with open(RELAX_FILE, 'w') as f:
+            json.dump(state, f)
+    except:
+        pass
+
+    if no_signal_min < SIGNAL_FREE_MIN_THRESHOLD:
         return None
 
     # Calculate relaxation steps (one per RELAX_STEP_MIN)
-    steps = int(elapsed_min / RELAX_STEP_MIN)
+    steps = int(no_signal_min / RELAX_STEP_MIN)
 
     # Relax from initial config values, not from current (cumulative)
     old_min_prob = MIN_PROB
@@ -455,7 +503,7 @@ def dynamic_relax_filters():
 
     if (MIN_PROB != old_min_prob or ATR_MULT != old_atr_mult or VOL_MULT != old_vol_mult):
         return {
-            'elapsed_min': elapsed_min,
+            'elapsed_min': no_signal_min,
             'steps': steps,
             'old_min_prob': old_min_prob,
             'new_min_prob': MIN_PROB,
@@ -552,6 +600,18 @@ async def run_trading_cycle():
         reason = "OK"
         signal_active = True
         LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Track for dynamic relax
+        # Persist to relax state file
+        try:
+            state = {}
+            if os.path.exists(RELAX_FILE):
+                with open(RELAX_FILE) as f:
+                    state = json.load(f)
+            state['last_signal_time'] = LAST_SIGNAL_TIME.isoformat()
+            state['no_signal_min'] = 0  # Reset accumulator
+            with open(RELAX_FILE, 'w') as f:
+                json.dump(state, f)
+        except:
+            pass
 
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
 
