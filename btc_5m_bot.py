@@ -500,10 +500,10 @@ async def settle_pending_trades_async():
                         t['result'] = 'WIN' if t['direction'] == actual_dir else 'LOSS'
                         # P&L (binary R:R 1:2, $0.495 win, $0.505 loss per $1)
                         if t['result'] == 'WIN':
-                            t['pnl'] = 0.495 * t['position_size']
+                            t['pnl'] = t['position_size']  # 1:2 R:R, win = position size
                             wins += 1
                         else:
-                            t['pnl'] = -0.505 * t['position_size']
+                            t['pnl'] = -t['position_size']  # 1:2 R:R, lose = -position size
                             losses += 1
                         t['status'] = 'settled'
                         t['settled_at'] = datetime.now(timezone.utc).isoformat()
