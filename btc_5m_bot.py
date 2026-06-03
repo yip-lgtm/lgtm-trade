@@ -641,6 +641,15 @@ async def run_trading_cycle():
 
     if DRY_RUN and signal_active:
         # Manual trading mode - clear actionable signal
+        # Determine outcome and entry price
+        if direction == 'UP':
+            outcome = 'YES'
+            entry_price = market['yes_price']
+        else:
+            outcome = 'NO'
+            entry_price = market['no_price']
+        position_size = min(MAX_POSITION, 1.0)  # $1 test trade
+
         msg += f"\n\n📱 <b>MANUAL TRADE</b>"
         msg += f"\n🔹 <b>Action: Buy {outcome} @ {entry_price:.3f}</b>"
         msg += f"\n🔹 Sizing: ${position_size:.2f}"
