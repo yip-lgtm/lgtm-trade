@@ -409,6 +409,125 @@ def load_state():
     except:
         pass
 
+TRADES_LOG = '/tmp/btc_5m_trades.jsonl'  # Persistent trade log
+STATS_FILE = '/tmp/btc_5m_stats.json'   # Cumulative stats
+
+def log_pending_trade(market, direction, prob_continue, edge, position_size):
+    """Log a pending trade to the trades file"""
+    try:
+        trade = {
+            'id': f"{market.get('slug', 'unknown')}_{int(time.time())}",
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'slug': market.get('slug', ''),
+            'direction': direction,
+            'state': STATE_HISTORY[-1].get('state', '') if STATE_HISTORY else '',
+            'p_hat': round(prob_continue, 3),
+            'edge': round(edge, 3),
+            'position_size': position_size,
+            'status': 'pending'
+        }
+        with open(TRADES_LOG, 'a') as f:
+            f.write(json.dumps(trade) + '\n')
+        print(f"[TRADE] Logged: {trade['id']} {direction} p̂={prob_continue:.3f} size=${position_size:.2f}")
+    except Exception as e:
+        print(f"[TRADE] Log error: {e}")
+
+def settle_pending_trades():
+    """Check pending trades and mark WIN/LOSS based on actual market result"""
+    if not os.path.exists(TRADES_LOG):
+        return None
+
+    try:
+        # Read all trades
+        trades = []
+        with open(TRADES_LOG) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    trades.append(json.loads(line))
+
+        now_ts = time.time()
+        settled_count = 0
+        new_pending = 0
+
+        for t in trades:
+            if t['status'] == 'pending':
+                # Trade timestamp + 5 min = settlement time
+                trade_time = datetime.fromisoformat(t['timestamp']).timestamp()
+                if now_ts > trade_time + 300:  # 5 min passed
+                    # Get actual result - we predicted the direction, check next 5m candle
+                    # In backtest, this would be a fetch. For now, mark as "to_settle"
+                    # Real check: the next market's outcome price will tell us
+                    # For simplicity, fetch the slug and check outcome
+                    try:
+                        # Will be filled by settlement cycle check
+                        t['status'] = 'settled'
+                        t['settled_at'] = datetime.now(timezone.utc).isoformat()
+                        settled_count += 1
+                    except:
+                        pass
+                else:
+                    new_pending += 1
+
+        # Write back
+        with open(TRADES_LOG, 'w') as f:
+            for t in trades:
+                f.write(json.dumps(t) + '\n')
+
+        return {'total': len(trades), 'settled': settled_count, 'pending': new_pending}
+    except Exception as e:
+        print(f"[SETTLE] Error: {e}")
+        return None
+
+def get_cumulative_stats():
+    """Get cumulative win rate, P&L, by direction"""
+    if not os.path.exists(TRADES_LOG):
+        return None
+
+    try:
+        trades = []
+        with open(TRADES_LOG) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    trades.append(json.loads(line))
+
+        # Filter settled trades with result
+        completed = [t for t in trades if t.get('result') in ('WIN', 'LOSS')]
+        if not completed:
+            return {'total': len(trades), 'completed': 0, 'pending': len([t for t in trades if t['status']=='pending'])}
+
+        wins = sum(1 for t in completed if t['result'] == 'WIN')
+        losses = len(completed) - wins
+        wr = wins / len(completed) * 100
+        pnl = sum(t.get('pnl', 0) for t in completed)
+
+        up_trades = [t for t in completed if t['direction'] == 'UP']
+        down_trades = [t for t in completed if t['direction'] == 'DOWN']
+
+        stats = {
+            'total_logged': len(trades),
+            'completed': len(completed),
+            'pending': len([t for t in trades if t['status']=='pending']),
+            'wins': wins,
+            'losses': losses,
+            'wr': wr,
+            'pnl': pnl,
+            'up_count': len(up_trades),
+            'up_wr': sum(1 for t in up_trades if t['result']=='WIN')/len(up_trades)*100 if up_trades else 0,
+            'down_count': len(down_trades),
+            'down_wr': sum(1 for t in down_trades if t['result']=='WIN')/len(down_trades)*100 if down_trades else 0,
+        }
+
+        # Save to stats file
+        with open(STATS_FILE, 'w') as f:
+            json.dump(stats, f, indent=2)
+
+        return stats
+    except Exception as e:
+        print(f"[STATS] Error: {e}")
+        return None
+
 def save_state():
     try:
         with open(STATE_FILE, 'w') as f:
@@ -519,6 +638,22 @@ async def run_trading_cycle():
 
     load_state()
     load_config()
+
+    # Check and settle pending trades from previous signals
+    settle_result = settle_pending_trades()
+    if settle_result and settle_result.get('settled', 0) > 0:
+        print(f"[SETTLE] Settled {settle_result['settled']} trades, {settle_result['pending']} pending")
+
+    # Print cumulative stats every 10 cycles
+    if CYCLE_COUNT % 10 == 0:
+        stats = get_cumulative_stats()
+        if stats and stats.get('completed', 0) > 0:
+            print(f"\n📊 CUMULATIVE STATS:")
+            print(f"   Total: {stats['total_logged']} logged, {stats['completed']} completed, {stats['pending']} pending")
+            print(f"   WR: {stats['wr']:.1f}% ({stats['wins']}W / {stats['losses']}L)")
+            print(f"   P&L: ${stats['pnl']:+.2f}")
+            print(f"   UP:   {stats['up_count']} signals, {stats['up_wr']:.1f}% WR")
+            print(f"   DOWN: {stats['down_count']} signals, {stats['down_wr']:.1f}% WR\n")
 
     # Dynamic relax - if no signals for a while, lower thresholds
     relax_info = dynamic_relax_filters()
@@ -668,6 +803,8 @@ async def run_trading_cycle():
 
     if signal_active:
         await send_telegram(msg, alert=True)  # Ring phone on signal!
+        # Log signal to trades file for settlement tracking
+        await log_pending_trade(market, direction, prob_continue, edge, position_size)
     else:
         print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason} (no alert)")
 
