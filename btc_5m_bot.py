@@ -887,7 +887,23 @@ async def run_trading_cycle():
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
 
     # 7. Telegram
-    if signal_active:
+    # Check for duplicate signal (same market slug already triggered)
+    current_slug = market.get('slug', '')
+    is_duplicate = False
+    try:
+        if os.path.exists(TRADES_LOG):
+            with open(TRADES_LOG) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        t = json.loads(line)
+                        if t.get('slug') == current_slug and t.get('status') == 'pending':
+                            is_duplicate = True
+                            break
+    except:
+        pass
+
+    if signal_active and not is_duplicate:
         # High-priority alert format
         msg = f"""🚨🚨🚨 <b>SIGNAL NOW!</b> 🚨🚨🚨
 
