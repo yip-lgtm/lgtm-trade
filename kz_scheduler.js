@@ -53,7 +53,11 @@ function sendTelegram(text) {
 function downloadData() {
     log('Downloading data...');
     try {
-        execSync('/usr/local/bin/node /tmp/dl_node.js', { timeout: 120000 });
+        // First try workspace location, then /tmp
+        const workspaceScript = '/home/node/.openclaw/workspace/dl_node.js';
+        const tmpScript = '/tmp/dl_node.js';
+        const script = fs.existsSync(workspaceScript) ? workspaceScript : tmpScript;
+        execSync(`/usr/local/bin/node ${script}`, { timeout: 120000 });
         log('Download complete');
     } catch(e) {
         log('Download failed (continuing with existing data): ' + e.message);
