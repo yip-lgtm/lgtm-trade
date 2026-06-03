@@ -18,6 +18,30 @@ from datetime import datetime, timezone
 from collections import Counter
 import ssl
 
+# Auto-load .env file (must come before any os.environ.get calls)
+def _load_env_file(path='/home/node/.openclaw/workspace/.env'):
+    """Simple .env loader - reads KEY=VALUE lines into os.environ"""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, _, value = line.partition('=')
+                key = key.strip()
+                value = value.strip()
+                # Only set if not already in environment
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except FileNotFoundError:
+        pass
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv('/home/node/.openclaw/workspace/.env')
+except ImportError:
+    _load_env_file()  # Fallback to manual loader
+
 # === CONFIG ===
 DRY_RUN = False  # LIVE TRADING
 MIN_PROB = 0.50
