@@ -645,10 +645,13 @@ async def run_trading_cycle():
         if direction == 'UP':
             outcome = 'YES'
             entry_price = market['yes_price']
+            # UP signals historically less accurate (47.9% WR) - half size
+            position_size = min(MAX_POSITION, 0.50)  # $0.50 base
         else:
             outcome = 'NO'
             entry_price = market['no_price']
-        position_size = min(MAX_POSITION, 1.0)  # $1 test trade
+            # DOWN signals more accurate (60.3% WR) - bigger size
+            position_size = min(MAX_POSITION, 1.50)  # $1.50 base
 
         msg += f"\n\n📱 <b>MANUAL TRADE</b>"
         msg += f"\n🔹 <b>Action: Buy {outcome} @ {entry_price:.3f}</b>"
