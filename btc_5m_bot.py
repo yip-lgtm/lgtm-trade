@@ -523,7 +523,7 @@ async def run_trading_cycle():
 
 ⏰ <code>btc-updown-5m-{next_window}</code>"""
 
-    if DRY_RUN:
+    if DRY_RUN and signal_active:
         # Manual trading mode - clear actionable signal
         msg += f"\n\n📱 <b>MANUAL TRADE</b>"
         msg += f"\n🔹 <b>Action: Buy {outcome} @ {entry_price:.3f}</b>"
@@ -533,7 +533,7 @@ async def run_trading_cycle():
         msg += f"\n🔹 Risk: Lose → -${entry_price:.3f}"
         msg += f"\n🔹 R:R: 1:{((1-entry_price)/entry_price):.2f}"
         msg += f"\n\n⏰ <code>{market.get('slug', 'btc-updown-5m')}</code>"
-    else:
+    elif not DRY_RUN and signal_active:
         # LIVE TRADING - execute if signal active
         trade_result = await execute_live_trade(market, direction, prob_continue, edge, q, msg)
         msg = trade_result['message']
