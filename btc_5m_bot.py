@@ -717,6 +717,22 @@ async def run_trading_cycle():
     load_state()
     load_config()
 
+    # Daily summary - check if new day
+    current_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    last_daily_date = None
+    try:
+        if os.path.exists(DAILY_SUMMARY_FILE):
+            with open(DAILY_SUMMARY_FILE) as f:
+                last_daily_date = json.load(f).get('last_sent_date')
+    except:
+        pass
+    if last_daily_date != current_date:
+        # New day detected - send summary
+        try:
+            await send_daily_summary_if_new()
+        except Exception as e:
+            print(f"[DAILY] Send error: {e}")
+
     # Check and settle pending trades from previous signals
     settle_result = await settle_pending_trades_async()
     if settle_result and settle_result.get('settled', 0) > 0:
@@ -935,6 +951,118 @@ async def run_trading_cycle():
         await nightly_review()
 
     return {'cycle': CYCLE_COUNT, 'state': state, 'prob': prob_continue, 'signal': signal_active}
+
+DAILY_SUMMARY_FILE = '/tmp/btc_5m_daily_summary.json'
+
+def get_daily_summary(force_new=False):
+    """Generate daily trading summary. Returns dict with daily stats.
+    force_new=True generates summary for current day regardless of last send."""
+    if not os.path.exists(TRADES_LOG):
+        return None
+
+    try:
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        trades = []
+        with open(TRADES_LOG) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    trades.append(json.loads(line))
+
+        # Filter trades for today (UTC)
+        today_trades = []
+        for t in trades:
+            trade_date = datetime.fromisoformat(t['timestamp']).strftime('%Y-%m-%d')
+            if trade_date == today:
+                today_trades.append(t)
+
+        if not today_trades and not force_new:
+            return None
+
+        completed = [t for t in today_trades if t.get('result') in ('WIN', 'LOSS')]
+        pending = [t for t in today_trades if t.get('status') == 'pending']
+
+        wins = sum(1 for t in completed if t['result'] == 'WIN')
+        losses = len(completed) - wins
+        wr = (wins / len(completed) * 100) if completed else 0
+        pnl = sum(t.get('pnl', 0) for t in completed)
+
+        up_trades = [t for t in completed if t['direction'] == 'UP']
+        down_trades = [t for t in completed if t['direction'] == 'DOWN']
+
+        up_pnl = sum(t.get('pnl', 0) for t in up_trades)
+        down_pnl = sum(t.get('pnl', 0) for t in down_trades)
+
+        # Best/worst trades
+        best = max(completed, key=lambda t: t.get('pnl', 0), default=None)
+        worst = min(completed, key=lambda t: t.get('pnl', 0), default=None)
+
+        summary = {
+            'date': today,
+            'total': len(today_trades),
+            'completed': len(completed),
+            'pending': len(pending),
+            'wins': wins,
+            'losses': losses,
+            'wr': wr,
+            'pnl': pnl,
+            'up_count': len(up_trades),
+            'up_wins': sum(1 for t in up_trades if t['result'] == 'WIN'),
+            'up_pnl': up_pnl,
+            'down_count': len(down_trades),
+            'down_wins': sum(1 for t in down_trades if t['result'] == 'WIN'),
+            'down_pnl': down_pnl,
+            'best': {'direction': best['direction'], 'pnl': best.get('pnl', 0), 'time': best.get('timestamp', '')} if best else None,
+            'worst': {'direction': worst['direction'], 'pnl': worst.get('pnl', 0), 'time': worst.get('timestamp', '')} if worst else None,
+        }
+
+        return summary
+    except Exception as e:
+        print(f"[DAILY] Error: {e}")
+        return None
+
+async def send_daily_summary_if_new():
+    """Send daily summary via Telegram if it hasn't been sent today"""
+    summary = get_daily_summary(force_new=True)
+    if not summary:
+        return False
+
+    # Check if already sent today
+    last_sent_date = None
+    try:
+        if os.path.exists(DAILY_SUMMARY_FILE):
+            with open(DAILY_SUMMARY_FILE) as f:
+                data = json.load(f)
+                last_sent_date = data.get('last_sent_date')
+    except:
+        pass
+
+    today = summary['date']
+    if last_sent_date == today and summary['completed'] == 0:
+        return False  # Already sent empty summary for today
+
+    # Format message
+    msg = (
+        f"📊 <b>Daily Summary - {summary['date']}</b>\n\n"
+        f"Trades: {summary['total']} ({summary['completed']} completed, {summary['pending']} pending)\n"
+        f"<b>WR: {summary['wr']:.1f}%</b> ({summary['wins']}W / {summary['losses']}L)\n"
+        f"<b>P&L: ${summary['pnl']:+.2f}</b>\n\n"
+        f"<b>UP:</b>   {summary['up_count']} signals, {summary['up_wins']}W, ${summary['up_pnl']:+.2f}\n"
+        f"<b>DOWN:</b> {summary['down_count']} signals, {summary['down_wins']}W, ${summary['down_pnl']:+.2f}\n"
+    )
+    if summary['best']:
+        msg += f"\nBest:  {summary['best']['direction']} +${summary['best']['pnl']:.2f} @ {summary['best']['time'][11:16]}"
+    if summary['worst'] and summary['worst'] != summary['best']:
+        msg += f"\nWorst: {summary['worst']['direction']} ${summary['worst']['pnl']:+.2f} @ {summary['worst']['time'][11:16]}"
+
+    await send_telegram(msg)
+
+    # Mark as sent
+    with open(DAILY_SUMMARY_FILE, 'w') as f:
+        json.dump({'last_sent_date': today, 'summary': summary}, f, indent=2)
+
+    print(f"[DAILY] Summary sent for {today}: WR={summary['wr']:.1f}%, P&L=${summary['pnl']:+.2f}")
+    return True
 
 async def nightly_review():
     global MIN_PROB, STATE_HISTORY
