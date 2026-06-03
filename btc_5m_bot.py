@@ -84,8 +84,8 @@ LAST_TRADE_DATE = None
 PAUSED_TODAY = False
 
 # Files
-STATE_FILE = "/home/node/.openclaw/workspace/btc_5m_state_v3.json"
-CONFIG_FILE = "/home/node/.openclaw/workspace/btc_5m_config_v3.json"
+STATE_FILE = "/tmp/btc_5m_state_v3.json"
+CONFIG_FILE = "/tmp/btc_5m_config_v3.json"
 
 def get_current_window_ts():
     return (int(time.time()) // 300) * 300
