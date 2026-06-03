@@ -18,11 +18,18 @@ const CSV_FILES  = { 'MES.F':'MES.F.csv','MNQ.F':'MNQ.F.csv','M2K.F':'M2K.F.csv'
 
 function isKillZone(utcStr) {
     const dt = new Date(utcStr + ' UTC');
-    const est = new Date(dt.getTime() - 4*60*60*1000);
-    const h = est.getUTCHours(), m = est.getUTCMinutes();
-    // 14:00-15:00 HKT = 02:00-03:00 EST
-    if (h >= 2 && h < 3) return 'London';
-    // 20:30-21:30 HKT = 12:30-13:30 UTC
+    const h = dt.getUTCHours(), m = dt.getUTCMinutes();
+    // London KZ: 14:00-15:00 HKT = 06:00-07:00 UTC
+    if (h >= 6 && h < 7) return 'London';
+    // NY KZ: 20:30-21:30 HKT = 12:30-13:30 UTC
+    if ((h === 12 && m >= 30) || (h === 13 && m < 30)) return 'NY';
+    return null;
+}
+
+function isKillZoneNow() {
+    const now = new Date();
+    const h = now.getUTCHours(), m = now.getUTCMinutes();
+    if (h >= 6 && h < 7) return 'London';
     if ((h === 12 && m >= 30) || (h === 13 && m < 30)) return 'NY';
     return null;
 }
@@ -146,7 +153,7 @@ function runScan() {
             const curSwingH = swingH[i], curSwingL = swingL[i], curFibR = fibR[i];
             const curFvgBull = fvgBull[i] || 0, curFvgBear = fvgBear[i] || 0;
             const curInOteBull = inOteBull[i] || 0, curInOteBear = inOteBear[i] || 0;
-            const kz = isKillZone(data[i].datetime);
+            const kz = isKillZoneNow();
             const pv = POINT_VALUE[sym], contracts = CONTRACTS[sym], prec = PRECISION[sym];
 
             // ===== ICT Bullish Conditions =====
