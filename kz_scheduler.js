@@ -54,7 +54,7 @@ function downloadData() {
     log('Downloading data...');
     try {
         // First try workspace location, then /tmp
-        const workspaceScript = '/home/node/.openclaw/workspace/dl_node.js';
+        const workspaceScript = '/home/node/.openclaw/workspace/dl_node.cjs';
         const tmpScript = '/tmp/dl_node.js';
         const script = fs.existsSync(workspaceScript) ? workspaceScript : tmpScript;
         execSync(`/usr/local/bin/node ${script}`, { timeout: 120000 });
