@@ -195,12 +195,12 @@ class ICTScanner:
     POINT_VALUE = {
         'MES.F': 5, 'MNQ.F': 2, 'M2K.F': 5, 'MYM.F': 0.5,
         'M6E.F': 12500, 'M6A.F': 10000, 'MCL.F': 100, 'MBT.F': 10,
-        'MET.F': 1
+        'MET.F': 1, 'MGC.F': 5, 'ES.F': 5, 'NQ.F': 2
     }
     CONTRACTS = {
         'MES.F': 2, 'MNQ.F': 2, 'M2K.F': 2, 'MYM.F': 2,
         'M6E.F': 2, 'M6A.F': 2, 'MCL.F': 1, 'MBT.F': 2,
-        'MET.F': 2
+        'MET.F': 2, 'MGC.F': 2, 'ES.F': 2, 'NQ.F': 2
     }
     PRECISION = {
         'MES.F': 2, 'MNQ.F': 2, 'M2K.F': 2, 'MYM.F': 2,

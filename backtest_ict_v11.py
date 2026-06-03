@@ -119,74 +119,71 @@ def backtest(days: int = 30, symbols: List[str] = None):
 
         scanner = ICTScanner(DatedProvider(dp, date_str + " 23:59:59"))
 
-        # For each kill zone (simulate)
+        # Generate setups ONCE per day (not per KZ)
         day_pnl = 0
         day_trades = []
+        try:
+            all_data = {sym: dp.get_data_until(sym, date_str + " 23:59:59") for sym in symbols}
+            if not all_data[symbols[0]]:
+                continue
 
-        for kz in ["LondonOpen", "NYOpen"]:
-            # Run scanner
-            try:
-                all_data = {sym: dp.get_data_until(sym, date_str + " 23:59:59") for sym in symbols}
-                if not all_data[symbols[0]]:
+            bias = scanner.get_daily_bias()
+            day_setups = []
+            for sym in symbols:
+                if len(all_data[sym]) < 50:
+                    continue
+                sym_setups = scanner.find_confluence_setups(all_data[sym], bias, sym)
+                day_setups.extend(sym_setups)
+
+            # Simulate trades (max 2 per day across all KZs)
+            trades_today = 0
+            for setup in day_setups:
+                if trades_today >= 2:
+                    break
+                if day_pnl <= -200:  # MAX_DAILY_LOSS
+                    break
+                # Find next day's data
+                next_dates = [d for d in all_dates if d > date_str]
+                if not next_dates:
+                    continue
+                next_date = next_dates[0]
+
+                next_data = dp.get_data_until(sym, next_date + " 23:59:59")
+                if not next_data:
                     continue
 
-                # Get bias
-                bias = scanner.get_daily_bias()
+                next_close = next_data[-1].close
 
-                setups = []
-                for sym in symbols:
-                    if len(all_data[sym]) < 50:
-                        continue
-                    setups.extend(scanner.find_confluence_setups(all_data[sym], bias, sym))
+                # Determine outcome (TP1 hit = win, else loss)
+                if setup.direction == "LONG":
+                    win = next_close >= setup.tp1
+                else:
+                    win = next_close <= setup.tp1
 
-                # Simulate trade
-                for setup in setups[:2]:  # Max 2 per KZ
-                    # Find next day's data
-                    next_dates = [d for d in all_dates if d > date_str]
-                    if not next_dates:
-                        continue
-                    next_date = next_dates[0]
+                # CORRECT P&L: TP1 hit = +$300, SL hit = -$100
+                pnl = 300 if win else -100
+                day_pnl += pnl
+                account_state['total_pnl'] += pnl
+                day_trades.append({
+                    'date': date_str,
+                    'sym': setup.symbol,
+                    'dir': setup.direction,
+                    'entry': setup.entry,
+                    'sl': setup.stop_loss,
+                    'tp1': setup.tp1,
+                    'win': win,
+                    'pnl': pnl,
+                    'conf': setup.confidence
+                })
+                trades_today += 1
 
-                    next_data = dp.get_data_until(sym, next_date + " 23:59:59")
-                    if not next_data:
-                        continue
+                if not win:
+                    account_state['consecutive_losses'] += 1
+                else:
+                    account_state['consecutive_losses'] = 0
 
-                    next_close = next_data[-1].close
-
-                    # Determine outcome
-                    if setup.direction == "LONG":
-                        # Win if next close > entry (target 1:3 R:R)
-                        win = next_close >= setup.tp1
-                    else:
-                        win = next_close <= setup.tp1
-
-                    pnl = 600 if win else -100
-                    day_pnl += pnl
-                    account_state['total_pnl'] += pnl
-                    day_trades.append({
-                        'date': date_str,
-                        'kz': kz,
-                        'sym': setup.symbol,
-                        'dir': setup.direction,
-                        'entry': setup.entry,
-                        'sl': setup.stop_loss,
-                        'tp1': setup.tp1,
-                        'win': win,
-                        'pnl': pnl,
-                        'conf': setup.confidence
-                    })
-
-                    if not win:
-                        account_state['consecutive_losses'] += 1
-                    else:
-                        account_state['consecutive_losses'] = 0
-
-                    # Daily kill switch
-                    if day_pnl <= -200:
-                        break
-
-            except Exception as e:
-                continue
+        except Exception as e:
+            continue
 
         daily_pnl.append(day_pnl)
         all_trades.extend(day_trades)
@@ -204,29 +201,6 @@ def backtest(days: int = 30, symbols: List[str] = None):
         print(f"Win Rate:      {wins/len(all_trades)*100:.1f}%")
         print(f"Total P&L:     ${sum(t['pnl'] for t in all_trades):+,.0f}")
         print(f"Avg P&L/trade: ${sum(t['pnl'] for t in all_trades)/len(all_trades):+,.2f}")
-
-    # Daily stats
-    if daily_pnl:
-        print(f"\nDaily P&L:")
-        print(f"  Avg:    ${sum(daily_pnl)/len(daily_pnl):+,.2f}")
-        print(f"  Max:    ${max(daily_pnl):+,.0f}")
-        print(f"  Min:    ${min(daily_pnl):+,.0f}")
-        print(f"  Days >0: {sum(1 for p in daily_pnl if p > 0)}")
-        print(f"  Days <0: {sum(1 for p in daily_pnl if p < 0)}")
-        print(f"  Days =0: {sum(1 for p in daily_pnl if p == 0)}")
-
-    # Per symbol
-    if all_trades:
-        print(f"\nPer Symbol:")
-        by_sym = {}
-        for t in all_trades:
-            if t['sym'] not in by_sym:
-                by_sym[t['sym']] = []
-            by_sym[t['sym']].append(t)
-        for sym, trades in sorted(by_sym.items()):
-            wins = sum(1 for t in trades if t['win'])
-            pnl = sum(t['pnl'] for t in trades)
-            print(f"  {sym:8s}: {len(trades):3d} trades, {wins/len(trades)*100:5.1f}% WR, ${pnl:+5.0f}")
 
     # Save to file
     out_path = '/tmp/ict_scanner_v11_backtest.json'
