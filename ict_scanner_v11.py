@@ -227,6 +227,14 @@ class ICTScanner:
         self.INITIAL_BALANCE = 50000
         self.MAX_DRAWDOWN = 2000
 
+        # Strategy parameters (configurable for WF optimization)
+        self.SWING_LOOKBACK = 20
+        self.OTE_LOW = 0.62
+        self.OTE_HIGH = 0.79
+        self.MIN_FVG_TICKS = 5
+        self.MIN_CONFIDENCE = 3
+        self.MAX_TRADES_PER_DAY = 2
+
         # Account state
         self.account = AccountState(balance=self.INITIAL_BALANCE)
 
@@ -338,7 +346,8 @@ class ICTScanner:
 
     def calculate_ote_zone(self, swing_high: float, swing_low: float, direction: str) -> Dict:
         """
-        OTE = Optimal Trade Entry (62-79% Fibonacci retracement)
+        OTE = Optimal Trade Entry (configurable Fibonacci retracement)
+        Default 62-79%, can be tuned via self.OTE_LOW / self.OTE_HIGH
         """
         fib_range = swing_high - swing_low
         if fib_range <= 0:
@@ -346,16 +355,16 @@ class ICTScanner:
 
         if direction == "BULLISH":
             return {
-                "low": swing_low + fib_range * 0.62,
-                "high": swing_low + fib_range * 0.79,
-                "mid": swing_low + fib_range * 0.705,
+                "low": swing_low + fib_range * self.OTE_LOW,
+                "high": swing_low + fib_range * self.OTE_HIGH,
+                "mid": swing_low + fib_range * (self.OTE_LOW + self.OTE_HIGH) / 2,
                 "valid": True
             }
         else:  # BEARISH
             return {
-                "low": swing_high - fib_range * 0.79,
-                "high": swing_high - fib_range * 0.62,
-                "mid": swing_high - fib_range * 0.705,
+                "low": swing_high - fib_range * self.OTE_HIGH,
+                "high": swing_high - fib_range * self.OTE_LOW,
+                "mid": swing_high - fib_range * (self.OTE_LOW + self.OTE_HIGH) / 2,
                 "valid": True
             }
 
@@ -435,8 +444,9 @@ class ICTScanner:
         vol_sma = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
         vol_above = volumes[i] > vol_sma
 
-        # Swing structure (20-period)
-        lookback = data[-21:-1] if len(data) > 21 else data[:-1]
+        # Swing structure (configurable lookback)
+        lookback_size = min(self.SWING_LOOKBACK, len(data) - 1)
+        lookback = data[-(lookback_size + 1):-1] if lookback_size > 0 and lookback_size < len(data) else data[:-1]
         if not lookback:
             return []
         swing_h = max(d.high for d in lookback)
