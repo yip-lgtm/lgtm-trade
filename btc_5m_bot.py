@@ -872,9 +872,9 @@ async def run_trading_cycle():
         msg += f"\n🔹 <b>Action: Buy {outcome} @ {entry_price:.3f}</b>"
         msg += f"\n🔹 Sizing: ${position_size:.2f}"
         msg += f"\n🔹 Market ends: ~5 min"
-        msg += f"\n🔹 Target: Win → ${entry_price:.3f}→$1.00 = +${1-entry_price:.3f}"
-        msg += f"\n🔹 Risk: Lose → -${entry_price:.3f}"
-        msg += f"\n🔹 R:R: 1:{((1-entry_price)/entry_price):.2f}"
+        msg += f"\n🔹 Target: Win → +${position_size:.2f} (R:R 1:2)"
+        msg += f"\n🔹 Risk: -${position_size:.2f}"
+        msg += f"\n🔹 R:R: 1:2 (binary)"
         msg += f"\n\n⏰ <code>{market.get('slug', 'btc-updown-5m')}</code>"
     elif not DRY_RUN and signal_active:
         # LIVE TRADING - execute if signal active
