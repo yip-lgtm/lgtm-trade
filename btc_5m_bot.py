@@ -503,7 +503,8 @@ async def settle_pending_trades_async():
         for t in trades:
             if t['status'] == 'pending':
                 trade_time = datetime.fromisoformat(t['timestamp']).timestamp()
-                if now_ts > trade_time + 300:  # 5 min passed, market should be settled
+                elapsed_min = (now_ts - trade_time) / 60.0
+                if elapsed_min > 5:  # 5 min passed, market should be settled
                     # Fetch actual market result
                     market = await fetch_market_by_slug(t['slug'])
                     if market:
@@ -511,15 +512,12 @@ async def settle_pending_trades_async():
                         yes_p = market.get('yes_price', 0.5)
                         no_p = market.get('no_price', 0.5)
                         is_closed = market.get('closed', False)
-                        # If extreme price (>0.95 or <0.05), market is decided even if not closed
-                        if is_closed or yes_p > 0.92 or no_p > 0.92:
-                            if yes_p > 0.92:
+                        # Lower threshold: >0.70 or <0.30 means market is decided
+                        if is_closed or yes_p > 0.70 or no_p > 0.70 or yes_p < 0.30 or no_p < 0.30:
+                            if yes_p > no_p:
                                 actual_dir = 'UP'
-                            elif no_p > 0.92:
-                                actual_dir = 'DOWN'
                             else:
-                                # Both extreme - default to no_price being decisive
-                                actual_dir = 'DOWN' if no_p > yes_p else 'UP'
+                                actual_dir = 'DOWN'
                             t['result'] = 'WIN' if t['direction'] == actual_dir else 'LOSS'
                             # P&L (1:2 R:R, win = position_size, lose = -position_size)
                             if t['result'] == 'WIN':
@@ -535,10 +533,27 @@ async def settle_pending_trades_async():
                             t['final_no'] = no_p
                             settled += 1
                             print(f"[SETTLE] {t['id']}: {t['direction']} vs actual {actual_dir} → {t['result']} (P&L ${t['pnl']:+.2f})")
+                        elif elapsed_min > 15:
+                            # Too old, no clear winner - mark as expired
+                            t['status'] = 'expired'
+                            t['result'] = 'EXPIRED'
+                            t['settled_at'] = datetime.now(timezone.utc).isoformat()
+                            t['note'] = f'no clear winner after {elapsed_min:.0f}min (yes={yes_p}, no={no_p})'
+                            settled += 1
+                            print(f"[SETTLE] {t['id']}: EXPIRED (no winner after {elapsed_min:.0f}min)")
                         else:
                             new_pending += 1
                     else:
-                        new_pending += 1
+                        # Market not found (archived)
+                        if elapsed_min > 30:
+                            t['status'] = 'archived'
+                            t['result'] = 'ARCHIVED'
+                            t['settled_at'] = datetime.now(timezone.utc).isoformat()
+                            t['note'] = 'market removed from API'
+                            settled += 1
+                            print(f"[SETTLE] {t['id']}: ARCHIVED (market removed)")
+                        else:
+                            new_pending += 1
                 else:
                     new_pending += 1
 
