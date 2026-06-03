@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 node_modules/
+
+# Old env file with secrets
+.btc_env.sh
