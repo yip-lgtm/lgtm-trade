@@ -23,7 +23,7 @@ const fs = require('fs');
 // ====== CONFIG ======
 const BOT_TOKEN = '8606567428:AAFvcsiNf00mAIES6-CTIwKeQTKaos0trNY';
 const CHAT_ID = '8475453959';
-const SCANNER_FILE = '/home/node/.openclaw/workspace/ict_scanner_v5.js';
+const SCANNER_FILE = '/home/node/.openclaw/workspace/ict_scanner_v11_wrapper.cjs';
 const LSTM_FILE = '/home/node/.openclaw/workspace/lstm_trading_v4_node.js';
 const LOG_FILE = '/tmp/kz_scheduler.log';
 const JOURNAL_FILE = '/home/node/.openclaw/workspace/live_trading_journal.csv';

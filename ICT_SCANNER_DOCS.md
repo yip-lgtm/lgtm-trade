@@ -1,4 +1,8 @@
-# ICT Scanner v5 - Complete Logic Documentation
+# ICT Scanner v1.1 - Complete Logic Documentation
+
+## Overview
+**v1.1 (Current)** - Python class with full ICT confluence, 50K risk rules, and injectable data/notifier.
+**v5 (Archived)** - Original Node.js implementation in `archive/ict_scanner_v5.cjs`.
 
 ## Overview
 The ICT (Inner Circle Trader) Scanner is a technical analysis scanner for futures trading that combines multiple ICT concepts with traditional TA indicators. It runs on each KZ session (London 14:00-15:00 HKT, NY 20:30-21:30 HKT) and only sends alerts when ICT conditions align during a Kill Zone.
