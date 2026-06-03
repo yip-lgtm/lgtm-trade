@@ -909,7 +909,7 @@ async def run_trading_cycle():
     if signal_active:
         await send_telegram(msg, alert=True)  # Ring phone on signal!
         # Log signal to trades file for settlement tracking
-        await log_pending_trade(market, direction, prob_continue, edge, position_size)
+        log_pending_trade(market, direction, prob_continue, edge, position_size)
     else:
         print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason} (no alert)")
 
