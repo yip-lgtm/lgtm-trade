@@ -870,18 +870,51 @@ async def run_trading_cycle():
     else:
         reason = "OK"
         signal_active = True
-        LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Track for dynamic relax
-        # Persist to relax state file
+        # === COUNTER-TREND FILTER ===
+        # If recent 5 candles strongly trending, don't predict counter-trend
+        if len(directions) >= 5:
+            recent_dirs = directions[-5:]
+            up_count = sum(1 for d in recent_dirs if d == 1)
+            down_count = 5 - up_count
+            if direction == 'UP' and down_count >= 4:
+                signal_active = False
+                reason = f"Counter-trend UP (last 5: {up_count}U/{down_count}D)"
+            elif direction == 'DOWN' and up_count >= 4:
+                signal_active = False
+                reason = f"Counter-trend DOWN (last 5: {up_count}U/{down_count}D)"
+        # === RECENT LOSS FILTER ===
+        # If last 2 trades in same direction were losses, skip
         try:
-            relax_state = {}
-            if os.path.exists(RELAX_FILE):
-                with open(RELAX_FILE) as f:
-                    relax_state = json.load(f)
-            relax_state['last_signal_time'] = LAST_SIGNAL_TIME.isoformat()
-            relax_state['no_signal_min'] = 0  # Reset accumulator
-            with open(RELAX_FILE, 'w') as f:
-                json.dump(relax_state, f)
+            if os.path.exists(TRADES_LOG):
+                recent_loss_count = {'UP': 0, 'DOWN': 0}
+                with open(TRADES_LOG) as f:
+                    lines = f.readlines()
+                    for line in lines[-6:]:  # Last 6 trades
+                        try:
+                            t = json.loads(line.strip())
+                            if t.get('result') == 'LOSS' and t.get('direction') in recent_loss_count:
+                                recent_loss_count[t['direction']] += 1
+                        except:
+                            pass
+                if recent_loss_count.get(direction, 0) >= 2:
+                    signal_active = False
+                    reason = f"Recent 2 {direction} losses - skip"
         except:
+            pass
+        # Only track for relax if actually triggering
+        if signal_active:
+            LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Track for dynamic relax
+            # Persist to relax state file
+            try:
+                relax_state = {}
+                if os.path.exists(RELAX_FILE):
+                    with open(RELAX_FILE) as f:
+                        relax_state = json.load(f)
+                relax_state['last_signal_time'] = LAST_SIGNAL_TIME.isoformat()
+                relax_state['no_signal_min'] = 0  # Reset accumulator
+                with open(RELAX_FILE, 'w') as f:
+                    json.dump(relax_state, f)
+            except:
             pass
 
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
