@@ -54,6 +54,17 @@ STATE_WINDOW = 4
 ATR_MULT = 0.8
 VOL_MULT = 0.6
 
+# === DYNAMIC ADJUSTMENT ===
+DYNAMIC_MODE = True  # Auto-relax filters when no signals
+LAST_SIGNAL_TIME = None  # Track when last signal triggered
+SIGNAL_FREE_MIN_THRESHOLD = 30  # Start relaxing after 30 min no signal
+RELAX_STEP_MIN = 15  # Adjust every 15 min
+MIN_PROB_FLOOR = 0.45  # Don't go below this
+ATR_MULT_FLOOR = 0.4  # Don't go below this
+VOL_MULT_FLOOR = 0.3  # Don't go below this
+PROB_RELAX_AMOUNT = 0.02  # Lower MIN_PROB by this per step
+MULT_RELAX_AMOUNT = 0.05  # Lower ATR/VOL_MULT by this per step
+
 TELEGRAM_TOKEN = "8606567428:AAFvcsiNf00mAIES6-CTIwKeQTKaos0trNY"
 TELEGRAM_CHAT_ID = "8475453959"
 GAMMA_API = "https://gamma-api.polymarket.com"
@@ -95,7 +106,7 @@ async def fetch_btc_klines():
         all_candles = []
         url_template = 'https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=5m&limit=200&after={}'
         after = None
-        
+
         for page in range(8):
             url = url_template.format(after) if after else url_template.format('')
             req = urllib.request.Request(url)
@@ -109,7 +120,7 @@ async def fetch_btc_klines():
                 after = candles[-1][0]
                 if len(all_candles) >= 1440:
                     break
-        
+
         all_candles.reverse()
         BTC_KLINES = all_candles[:1440]
         return len(BTC_KLINES)
@@ -172,14 +183,14 @@ def get_avg_vol(klines, lookback=20):
 def build_filtered_matrix(directions, streaks, klines, atr_avg, vol_avg):
     """Build Markov matrix with ATR and volume filters"""
     global TRANSITION_MATRIX
-    
+
     filtered_indices = []
     for i in range(STATE_WINDOW, len(klines) - 1):
         atr = compute_atr(klines, i)
         vol = get_volume(i, klines)
         if atr > atr_avg * ATR_MULT and vol > vol_avg * VOL_MULT:
             filtered_indices.append(i)
-    
+
     transitions = {}
     for i in filtered_indices:
         state = ''.join(str(s) for s in streaks[i-STATE_WINDOW:i])
@@ -187,7 +198,7 @@ def build_filtered_matrix(directions, streaks, klines, atr_avg, vol_avg):
         if state not in transitions:
             transitions[state] = {'UP': 0, 'DOWN': 0}
         transitions[state][next_dir] += 1
-    
+
     TRANSITION_MATRIX = {}
     for state, counts in transitions.items():
         total = counts['UP'] + counts['DOWN']
@@ -197,7 +208,7 @@ def build_filtered_matrix(directions, streaks, klines, atr_avg, vol_avg):
                 'DOWN': counts['DOWN'] / total,
                 'total': total
             }
-    
+
     return len(filtered_indices), len(TRANSITION_MATRIX)
 
 def get_state(state):
@@ -212,16 +223,16 @@ def get_state(state):
 async def execute_live_trade(market, direction, prob_continue, edge, q, signal_msg):
     """Execute live trade with real money via PolyClaw L2 Client"""
     global CONSECUTIVE_LOSSES, TODAY_LOSS, LAST_TRADE_DATE, PAUSED_TODAY
-    
+
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    
+
     # Reset daily loss if new day
     if LAST_TRADE_DATE != today:
         TODAY_LOSS = 0.0
         CONSECUTIVE_LOSSES = 0
         LAST_TRADE_DATE = today
         PAUSED_TODAY = False
-    
+
     # Check pause conditions
     if PAUSED_TODAY:
         return {
@@ -229,7 +240,7 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
             'executed': False,
             'reason': 'paused'
         }
-    
+
     # Check daily loss limit
     if TODAY_LOSS >= MAX_DAILY_LOSS:
         PAUSED_TODAY = True
@@ -238,10 +249,10 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
             'executed': False,
             'reason': 'daily_limit'
         }
-    
+
     # Use minimum of MAX_POSITION or $1 for test
     position_size = min(MAX_POSITION, 1.0)  # $1 test trade
-    
+
     # Prepare trade info
     if direction == 'UP':
         outcome = 'YES'
@@ -249,19 +260,19 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
     else:
         outcome = 'NO'
         entry_price = market['no_price']
-    
+
     # Execute real trade via PolyClaw L2
     try:
         from py_clob_client_v2 import ClobClient, SignatureTypeV2
         from py_clob_client_v2.order_builder.constants import BUY, SELL
         from py_clob_client_v2 import OrderArgs, PartialCreateOrderOptions
-        
+
         private_key = os.environ.get('POLYCLAW_PRIVATE_KEY', '')
         funder = os.environ.get('RELAYER_API_KEY_ADDRESS', '')
-        
+
         if not private_key or not funder:
             raise Exception('Missing POLYCLAW_PRIVATE_KEY or RELAYER_API_KEY_ADDRESS')
-        
+
         # Create L2 client with POLY_1271 signature
         temp_client = ClobClient(
             host='https://clob.polymarket.com',
@@ -269,7 +280,7 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
             chain_id=137
         )
         api_creds = temp_client.create_or_derive_api_key()
-        
+
         client = ClobClient(
             host='https://clob.polymarket.com',
             key=private_key,
@@ -278,18 +289,18 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
             signature_type=SignatureTypeV2.POLY_1271,
             funder=funder
         )
-        
+
         # Get token ID from market
         token_id = market.get('tokens', [None])[0] if market.get('tokens') else None
         if not token_id:
             raise Exception('No token_id in market')
-        
+
         # Place order
         side = BUY if direction == 'UP' else SELL
-        
+
         # Size = position_size / price (rough approximation)
         size = position_size / entry_price
-        
+
         response = client.create_and_post_order(
             OrderArgs(
                 token_id=token_id,
@@ -302,7 +313,7 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
                 neg_risk=False,
             ),
         )
-        
+
         if response.get('orderID'):
             pnl = 0  # Unresolved
             CONSECUTIVE_LOSSES = 0
@@ -310,21 +321,21 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
             result_emoji = "✅"
         else:
             raise Exception(str(response))
-        
+
     except Exception as e:
         pnl = 0
         CONSECUTIVE_LOSSES += 1
         TODAY_LOSS += position_size
         result_emoji = "❌"
         result_text = f"ERROR: {str(e)[:100]}"
-    
+
     # Check consecutive losses
     if CONSECUTIVE_LOSSES >= 3:
         PAUSED_TODAY = True
         pause_msg = f"\n\n⚠️ 3 CONSECUTIVE LOSSES - Trading paused for today"
     else:
         pause_msg = ""
-    
+
     trade_msg = f"""
 
 💰 <b>LIVE TRADE EXECUTED</b>
@@ -336,7 +347,7 @@ async def execute_live_trade(market, direction, prob_continue, edge, q, signal_m
 {result_emoji} <b>Result:</b> {result_text}
 📊 Today P&L: <code>${-TODAY_LOSS:.2f}</code>
 📊 Consecutive Losses: {CONSECUTIVE_LOSSES}{pause_msg}"""
-    
+
     return {
         'message': signal_msg + trade_msg,
         'executed': True,
@@ -419,68 +430,111 @@ def save_config():
     except:
         pass
 
+def dynamic_relax_filters():
+    """If no signals for a while, gradually relax thresholds"""
+    global MIN_PROB, ATR_MULT, VOL_MULT, LAST_SIGNAL_TIME
+
+    if not DYNAMIC_MODE or LAST_SIGNAL_TIME is None:
+        return None
+
+    elapsed_min = (datetime.now(timezone.utc) - LAST_SIGNAL_TIME).total_seconds() / 60
+    if elapsed_min < SIGNAL_FREE_MIN_THRESHOLD:
+        return None
+
+    # Calculate relaxation steps (one per RELAX_STEP_MIN)
+    steps = int(elapsed_min / RELAX_STEP_MIN)
+
+    old_min_prob = MIN_PROB
+    old_atr_mult = ATR_MULT
+    old_vol_mult = VOL_MULT
+
+    MIN_PROB = max(MIN_PROB_FLOOR, 0.50 - PROB_RELAX_AMOUNT * steps)
+    ATR_MULT = max(ATR_MULT_FLOOR, 0.80 - MULT_RELAX_AMOUNT * steps)
+    VOL_MULT = max(VOL_MULT_FLOOR, 0.60 - MULT_RELAX_AMOUNT * steps)
+
+    if (MIN_PROB != old_min_prob or ATR_MULT != old_atr_mult or VOL_MULT != old_vol_mult):
+        return {
+            'elapsed_min': elapsed_min,
+            'steps': steps,
+            'old_min_prob': old_min_prob,
+            'new_min_prob': MIN_PROB,
+            'old_atr_mult': old_atr_mult,
+            'new_atr_mult': ATR_MULT,
+            'old_vol_mult': old_vol_mult,
+            'new_vol_mult': VOL_MULT,
+        }
+    return None
+
 async def run_trading_cycle():
-    global STATE_HISTORY, CYCLE_COUNT
-    
+    global STATE_HISTORY, CYCLE_COUNT, LAST_SIGNAL_TIME
+
     load_state()
     load_config()
-    
+
+    # Dynamic relax - if no signals for a while, lower thresholds
+    relax_info = dynamic_relax_filters()
+    if relax_info:
+        print(f"🔧 DYNAMIC RELAX: {relax_info['elapsed_min']:.0f}min no signal → "
+              f"MIN_PROB {relax_info['old_min_prob']:.2f}→{relax_info['new_min_prob']:.2f}, "
+              f"ATR_MULT {relax_info['old_atr_mult']:.2f}→{relax_info['new_atr_mult']:.2f}, "
+              f"VOL_MULT {relax_info['old_vol_mult']:.2f}→{relax_info['new_vol_mult']:.2f}")
+
     next_window = get_next_window_ts()
     now = datetime.now(timezone.utc)
     CYCLE_COUNT += 1
-    
+
     print(f"\n{'='*60}")
     print(f"Cycle #{CYCLE_COUNT} | {now.strftime('%H:%M:%S')} UTC")
-    
+
     # 1. Fetch BTC
     btc_count = await fetch_btc_klines()
     print(f"[BTC] {btc_count} candles")
-    
+
     if btc_count < 100:
         return None
-    
+
     # 2. Compute indicators
     directions = compute_directions(BTC_KLINES)
     streaks = compute_streaks(directions)
-    
+
     atr_avg = get_avg_atr(BTC_KLINES)
     vol_avg = get_avg_vol(BTC_KLINES)
     current_atr = compute_atr(BTC_KLINES, len(BTC_KLINES) - 1)
     current_vol = get_volume(len(BTC_KLINES) - 1, BTC_KLINES)
-    
+
     print(f"[FILTER] ATR={current_atr:.2f} (avg={atr_avg:.2f}, threshold={atr_avg*ATR_MULT:.2f})")
     print(f"[FILTER] Vol={current_vol:.4f} (avg={vol_avg:.4f}, threshold={vol_avg*VOL_MULT:.4f})")
     print(f"[BTC] Last streaks: {streaks[-5:]}")
-    
+
     # 3. Build filtered matrix
     filtered_count, state_count = build_filtered_matrix(directions, streaks, BTC_KLINES, atr_avg, vol_avg)
     print(f"[MARKOV] Filtered={filtered_count} candles, {state_count} states")
-    
+
     # 4. Get current state
     state = ''.join(str(s) for s in streaks[-STATE_WINDOW:]) if len(streaks) >= STATE_WINDOW else None
     last_dir = directions[-1] if directions else 'UNKNOWN'
-    
+
     prob_continue, state_n = get_state(state)
-    
+
     print(f"[MARKOV] State={state}, last_dir={last_dir}, p̂={prob_continue:.3f} (n={state_n})")
-    
+
     # 5. Fetch Polymarket
     market = await fetch_polymarket_market(next_window)
     if not market:
         print("[POLY] No market")
         return None
-    
+
     print(f"[POLY] YES={market['yes_price']:.3f}, NO={market['no_price']:.3f}")
-    
+
     # 6. Signal check
     direction = last_dir
     q = market['no_price'] if direction == 'UP' else market['yes_price']
     edge = prob_continue - q
-    
+
     # Filters
     passes_vol = current_vol > vol_avg * VOL_MULT
     passes_atr = current_atr > atr_avg * ATR_MULT
-    
+
     if not passes_atr:
         reason = f"Low ATR ({current_atr:.2f} < {atr_avg*ATR_MULT:.2f})"
         signal_active = False
@@ -496,9 +550,10 @@ async def run_trading_cycle():
     else:
         reason = "OK"
         signal_active = True
-    
+        LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Track for dynamic relax
+
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
-    
+
     # 7. Telegram
     if signal_active:
         # High-priority alert format
@@ -537,7 +592,7 @@ async def run_trading_cycle():
         # LIVE TRADING - execute if signal active
         trade_result = await execute_live_trade(market, direction, prob_continue, edge, q, msg)
         msg = trade_result['message']
-    
+
     if signal_active:
         await send_telegram(msg, alert=True)  # Ring phone on signal!
     else:
@@ -557,80 +612,80 @@ async def run_trading_cycle():
         'signal': signal_active,
         'reason': reason
     })
-    
+
     save_state()
-    
+
     # 9. Auto-adjust at 50 cycles
     if CYCLE_COUNT > 0 and CYCLE_COUNT % TARGET_CYCLES == 0:
         await nightly_review()
-    
+
     return {'cycle': CYCLE_COUNT, 'state': state, 'prob': prob_continue, 'signal': signal_active}
 
 async def nightly_review():
     global MIN_PROB, STATE_HISTORY
-    
+
     # === 50-Cycle Dynamic Auto-Adjust ===
     print(f"\n🔄 50-CYCLE AUTO-ADJUST after {len(STATE_HISTORY)} cycles")
-    
+
     # 1. Stats on recent cycles
     recent = STATE_HISTORY[-TARGET_CYCLES:]
     probs = [e.get('prob_continue', 0) for e in recent]
     max_prob = max(probs) if probs else 0
     avg_prob = sum(probs) / len(probs) if probs else 0
-    
+
     # 2. Signal rate
     signal_count = sum(1 for e in recent if e.get('signal'))
     signal_rate = signal_count / len(recent) if recent else 0
-    
+
     # 3. Filter reasons (what's blocking signals)
     reasons = {}
     for e in recent:
         if not e.get('signal'):
             r = e.get('reason', 'Unknown')
             reasons[r] = reasons.get(r, 0) + 1
-    
+
     print(f"[ADJUST] p̂ max={max_prob:.3f} avg={avg_prob:.3f} signal_rate={signal_rate*100:.1f}%")
     print(f"[ADJUST] Blocked by: {reasons}")
-    
+
     old_prob = MIN_PROB
     adjustment_reason = ""
-    
+
     # === ADJUSTMENT RULES ===
-    
+
     # Rule 1: If max p̂ is very low vs current threshold, lower it
     if max_prob < MIN_PROB * 0.7:
         new_prob = max(0.45, MIN_PROB - 0.03)
         if new_prob < MIN_PROB:
             MIN_PROB = new_prob
             adjustment_reason = f"max p̂ {max_prob:.3f} too low, lower to {MIN_PROB:.2f}"
-    
+
     # Rule 2: If signal rate is too high (>30%), raise threshold
     elif signal_rate > 0.30:
         new_prob = min(0.75, MIN_PROB + 0.02)
         if new_prob > MIN_PROB:
             MIN_PROB = new_prob
             adjustment_reason = f"signal rate {signal_rate*100:.1f}% too high, raise to {MIN_PROB:.2f}"
-    
+
     # Rule 3: If max p̂ is well above threshold AND signal rate is low, can lower
     elif max_prob > MIN_PROB * 1.3 and signal_rate < 0.10:
         new_prob = max(0.45, MIN_PROB - 0.02)
         if new_prob < MIN_PROB:
             MIN_PROB = new_prob
             adjustment_reason = f"max p̂ {max_prob:.3f} high, signal rate low, lower to {MIN_PROB:.2f}"
-    
+
     # Rule 4: If no signals at all, lower more aggressively
     elif signal_count == 0 and len(recent) >= 30:
         new_prob = max(0.45, MIN_PROB - 0.05)
         if new_prob < MIN_PROB:
             MIN_PROB = new_prob
             adjustment_reason = f"0 signals in 50 cycles, lower to {MIN_PROB:.2f}"
-    
+
     if adjustment_reason:
         print(f"[ADJUST] {old_prob:.2f} → {MIN_PROB:.2f} ({adjustment_reason})")
         save_config()
     else:
         print(f"[ADJUST] No change needed, MIN_PROB={MIN_PROB:.2f}")
-    
+
     msg = f"""🔄 <b>50-Cycle Auto-Adjust</b>
 
 📊 Cycles: {len(recent)}
@@ -641,9 +696,9 @@ async def nightly_review():
 
 Top block reasons:
 {chr(10).join(f"  • {k}: {v}" for k, v in sorted(reasons.items(), key=lambda x: -x[1])[:3])}"""
-    
+
     await send_telegram(msg, alert=True)  # Daily summary also alerts
-    
+
     STATE_HISTORY = []
     save_state()
 
@@ -651,18 +706,18 @@ async def main():
     global CYCLE_COUNT
     load_state()
     load_config()
-    
+
     print("BTC 5m Bot v3 - ATR+Vol Filter")
     print(f"MIN_PROB={MIN_PROB}, ATR>{ATR_MULT}x avg, Vol>{VOL_MULT}x avg")
     print(f"Cycle {CYCLE_COUNT}/{TARGET_CYCLES}")
-    
+
     result = await run_trading_cycle()
-    
+
     if result:
         next_time = datetime.fromtimestamp(time.time() + CHECK_INTERVAL, tz=timezone.utc)
         print(f"\n✓ #{result['cycle']} p̂={result['prob']:.3f}, Signal={result['signal']}")
         print(f"⏰ Next: {next_time.strftime('%H:%M:%S')}")
-    
+
     return result
 
 if __name__ == "__main__":
