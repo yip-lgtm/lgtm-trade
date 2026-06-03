@@ -432,13 +432,38 @@ def log_pending_trade(market, direction, prob_continue, edge, position_size):
     except Exception as e:
         print(f"[TRADE] Log error: {e}")
 
-def settle_pending_trades():
-    """Check pending trades and mark WIN/LOSS based on actual market result"""
+async def fetch_market_by_slug(slug):
+    """Fetch market data by slug, return outcome prices"""
+    try:
+        url = f"{GAMMA_API}/markets?slug={slug}"
+        req = urllib.request.Request(url)
+        req.add_header('User-Agent', 'Mozilla/5.0')
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read().decode())
+        if data and len(data) > 0:
+            market = data[0]
+            tokens_str = market.get('clobTokenIds', '[]')
+            tokens = json.loads(tokens_str) if isinstance(tokens_str, str) else tokens_str
+            outcome_prices = market.get('outcomePrices', '[]')
+            prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
+            return {
+                'slug': slug,
+                'closed': market.get('closed', False),
+                'yes_price': float(prices[0]) if len(prices) > 0 else 0.5,
+                'no_price': float(prices[1]) if len(prices) > 1 else 0.5,
+                'tokens': tokens,
+            }
+    except Exception as e:
+        return None
+    return None
+
+async def settle_pending_trades_async():
+    """Check pending trades and mark WIN/LOSS based on actual market result.
+    Returns dict with settled/win/loss counts."""
     if not os.path.exists(TRADES_LOG):
         return None
 
     try:
-        # Read all trades
         trades = []
         with open(TRADES_LOG) as f:
             for line in f:
@@ -447,37 +472,65 @@ def settle_pending_trades():
                     trades.append(json.loads(line))
 
         now_ts = time.time()
-        settled_count = 0
+        settled = 0
+        wins = 0
+        losses = 0
         new_pending = 0
 
         for t in trades:
             if t['status'] == 'pending':
-                # Trade timestamp + 5 min = settlement time
                 trade_time = datetime.fromisoformat(t['timestamp']).timestamp()
-                if now_ts > trade_time + 300:  # 5 min passed
-                    # Get actual result - we predicted the direction, check next 5m candle
-                    # In backtest, this would be a fetch. For now, mark as "to_settle"
-                    # Real check: the next market's outcome price will tell us
-                    # For simplicity, fetch the slug and check outcome
-                    try:
-                        # Will be filled by settlement cycle check
+                if now_ts > trade_time + 300:  # 5 min passed, market should be settled
+                    # Fetch actual market result
+                    market = await fetch_market_by_slug(t['slug'])
+                    if market and market.get('closed'):
+                        # Determine winner
+                        # If YES price is 1.0 (or close), UP won
+                        # If NO price is 1.0 (or close), DOWN won
+                        yes_p = market.get('yes_price', 0.5)
+                        no_p = market.get('no_price', 0.5)
+                        if yes_p > 0.95:
+                            actual_dir = 'UP'
+                        elif no_p > 0.95:
+                            actual_dir = 'DOWN'
+                        else:
+                            actual_dir = 'UNKNOWN'
+                        if actual_dir == 'UNKNOWN':
+                            continue  # skip for now
+                        t['result'] = 'WIN' if t['direction'] == actual_dir else 'LOSS'
+                        # P&L (binary R:R 1:2, $0.495 win, $0.505 loss per $1)
+                        if t['result'] == 'WIN':
+                            t['pnl'] = 0.495 * t['position_size']
+                            wins += 1
+                        else:
+                            t['pnl'] = -0.505 * t['position_size']
+                            losses += 1
                         t['status'] = 'settled'
                         t['settled_at'] = datetime.now(timezone.utc).isoformat()
-                        settled_count += 1
-                    except:
-                        pass
+                        t['actual_dir'] = actual_dir
+                        t['final_yes'] = yes_p
+                        t['final_no'] = no_p
+                        settled += 1
+                        print(f"[SETTLE] {t['id']}: {t['direction']} vs actual {actual_dir} → {t['result']} (P&L ${t['pnl']:+.2f})")
+                    else:
+                        new_pending += 1
                 else:
                     new_pending += 1
 
-        # Write back
-        with open(TRADES_LOG, 'w') as f:
-            for t in trades:
-                f.write(json.dumps(t) + '\n')
+        if settled > 0:
+            with open(TRADES_LOG, 'w') as f:
+                for t in trades:
+                    f.write(json.dumps(t) + '\n')
+            print(f"[SETTLE] {settled} trades settled ({wins}W / {losses}L), {new_pending} still pending")
 
-        return {'total': len(trades), 'settled': settled_count, 'pending': new_pending}
+        return {'total': len(trades), 'settled': settled, 'wins': wins, 'losses': losses, 'pending': new_pending}
     except Exception as e:
         print(f"[SETTLE] Error: {e}")
         return None
+
+def settle_pending_trades():
+    """Sync wrapper for backward compat"""
+    return None  # Use settle_pending_trades_async instead
 
 def get_cumulative_stats():
     """Get cumulative win rate, P&L, by direction"""
@@ -640,7 +693,7 @@ async def run_trading_cycle():
     load_config()
 
     # Check and settle pending trades from previous signals
-    settle_result = settle_pending_trades()
+    settle_result = await settle_pending_trades_async()
     if settle_result and settle_result.get('settled', 0) > 0:
         print(f"[SETTLE] Settled {settle_result['settled']} trades, {settle_result['pending']} pending")
 
