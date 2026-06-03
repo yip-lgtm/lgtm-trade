@@ -914,7 +914,9 @@ async def run_trading_cycle():
                 relax_state['no_signal_min'] = 0  # Reset accumulator
                 with open(RELAX_FILE, 'w') as f:
                     json.dump(relax_state, f)
-            except:
+            except Exception:
+                pass
+        # End signal_active check
             pass
 
     print(f"[SIGNAL] {direction}, p̂={prob_continue:.3f}, q={q:.3f}, Δ={edge:.3f} → {reason}")
