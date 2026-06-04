@@ -324,5 +324,68 @@ def run_backtest():
             s_pnl = sum(t['pnl'] for t in s_trades)
             print(f"  {sym:7}: {len(s_trades):3} trades, {s_wins}W, ${s_pnl:+.0f}")
 
+    # === AUTO WR / R:R REPORT ===
+    print()
+    print("="*70)
+    print("AUTO WR / R:R ANALYSIS")
+    print("="*70)
+
+    def calc_rr(trades):
+        """Calculate actual achieved R:R"""
+        if not trades:
+            return 0
+        avg_win = sum(t['pnl'] for t in trades if t['pnl'] > 0) / max(1, sum(1 for t in trades if t['pnl'] > 0))
+        avg_loss = abs(sum(t['pnl'] for t in trades if t['pnl'] < 0)) / max(1, sum(1 for t in trades if t['pnl'] < 0))
+        if avg_loss == 0:
+            return float('inf') if avg_win > 0 else 0
+        return avg_win / avg_loss
+
+    def calc_metrics(trades, label):
+        if not trades:
+            return
+        wins = [t for t in trades if t['pnl'] > 0]
+        losses = [t for t in trades if t['pnl'] < 0]
+        n = len(trades)
+        nw = len(wins)
+        wr = nw / n * 100
+        pnl = sum(t['pnl'] for t in trades)
+        rr = calc_rr(trades)
+        ev = (nw/n * (pnl/nw if nw else 0)) - ((n-nw)/n * (abs(sum(t['pnl'] for t in losses)/(n-nw)) if (n-nw) else 0))
+        print(f"  {label:20} | N={n:3} | WR={wr:5.1f}% | P&L=${pnl:+7.0f} | R:R=1:{rr:.2f} | EV=${ev:+.1f}/trade")
+
+    print("Overall:")
+    calc_metrics(all_trades, "ALL")
+
+    print("\nBy direction:")
+    calc_metrics([t for t in all_trades if t['direction'] == 'LONG'], "LONG")
+    calc_metrics([t for t in all_trades if t['direction'] == 'SHORT'], "SHORT")
+
+    print("\nBy KZ:")
+    calc_metrics([t for t in all_trades if t['kz'] == 'LondonOpen'], "LondonOpen")
+    calc_metrics([t for t in all_trades if t['kz'] == 'NYOpen'], "NYOpen")
+
+    print("\nBy symbol:")
+    for sym in SYMBOLS:
+        calc_metrics([t for t in all_trades if t['symbol'] == sym], sym)
+
+    print("\nBy day:")
+    for date_key in sorted(set(t['date'] for t in all_trades)):
+        calc_metrics([t for t in all_trades if t['date'] == date_key], str(date_key))
+
+    print("\nBy direction × KZ:")
+    for d in ['LONG', 'SHORT']:
+        for k in ['LondonOpen', 'NYOpen']:
+            calc_metrics([t for t in all_trades if t['direction'] == d and t['kz'] == k], f"{d}+{k}")
+
+    # Summary stats
+    total_wins = sum(t['pnl'] for t in all_trades if t['pnl'] > 0)
+    total_losses = sum(t['pnl'] for t in all_trades if t['pnl'] < 0)
+    print()
+    print(f"💰 Win total:  ${total_wins:+,.0f}")
+    print(f"💸 Loss total: ${total_losses:+,.0f}")
+    print(f"📊 Net:        ${total_wins + total_losses:+,.0f}")
+    print(f"📈 Profit Factor: {abs(total_wins / total_losses) if total_losses else 'inf':.2f}")
+    print(f"📈 Expectancy: ${(total_wins + total_losses) / len(all_trades):+.1f}/trade")
+
 if __name__ == '__main__':
     run_backtest()
