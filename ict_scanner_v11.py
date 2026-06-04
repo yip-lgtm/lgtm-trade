@@ -1015,8 +1015,24 @@ def main():
         print(f"[TG] {msg[:100]}...")
 
     scanner = ICTScanner(dp, notifier=tg_notifier)
+    # Load suspended symbols (v1.2 auto-filter)
+    suspended = []
+    import os
+    if os.path.exists('/tmp/ict_suspended_symbols.json'):
+        with open('/tmp/ict_suspended_symbols.json') as f:
+            try:
+                suspended = json.load(f)
+            except:
+                suspended = []
+    suspended_names = [s['symbol'] for s in suspended]
     # Optimized symbol list (per backtest: 35% WR, +$700 P&L)
-    symbols = ['MNQ.F', 'M2K.F', 'MBT.F', 'MET.F']
+    all_symbols = ['MNQ.F', 'M2K.F', 'MBT.F', 'MET.F']
+    symbols = [s for s in all_symbols if s not in suspended_names]
+    if suspended_names:
+        print(f"⏸️ Suspended symbols: {suspended_names}")
+    if not symbols:
+        print("❌ All symbols suspended!")
+        return
 
     setups = scanner.run_daily_scan(symbols)
     print(f"\n✅ {len(setups)} setups found")

@@ -308,23 +308,24 @@ async function main() {
 async function runDailySettlement() {
     state.dailySettlement = day;
     saveState();
-    log('Running daily settlement...');
+    log('Running daily settlement + v1.2 report...');
     const { execSync } = require('child_process');
     try {
-        const output = execSync('python3 /home/node/.openclaw/workspace/ict_daily_settlement.py settle', {
+        // Step 1: Settle pending trades
+        const settleOutput = execSync('python3 /home/node/.openclaw/workspace/ict_daily_settlement.py settle', {
             cwd: '/home/node/.openclaw/workspace',
             encoding: 'utf-8',
             timeout: 60000
         });
-        log(output);
-        // Send Telegram summary
-        const summary = execSync('python3 /home/node/.openclaw/workspace/ict_daily_settlement.py summary', {
+        log(settleOutput);
+        // Step 2: Generate v1.2 report
+        const reportOutput = execSync('python3 /home/node/.openclaw/workspace/ict_auto_iteration.py report', {
             cwd: '/home/node/.openclaw/workspace',
             encoding: 'utf-8',
             timeout: 30000
         });
-        log(summary);
-        await sendTelegram(`🌙 *ICT Daily Settlement*\n\`\`\`\n${summary}\n\`\`\``);
+        log(reportOutput);
+        await sendTelegram(reportOutput);
     } catch (e) {
         log('Settlement error: ' + e.message);
     }
