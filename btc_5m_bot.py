@@ -14,7 +14,7 @@ import asyncio
 import urllib.request
 import urllib.parse
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import Counter
 import ssl
 
@@ -748,8 +748,9 @@ async def run_trading_cycle():
     now = datetime.now(timezone.utc)
     current_date = now.strftime('%Y-%m-%d')
 
-    # EOD summary at 23:55 UTC
-    if now.hour == 23 and now.minute >= 55 and last_eod_date != current_date:
+    # EOD at 23:55 UTC DISABLED (sending daily summary at 00:00 UTC instead)
+    # The send_eod_summary() function returns False, so this is a no-op
+    if False and now.hour == 23 and now.minute >= 55 and last_eod_date != current_date:
         try:
             await send_eod_summary()
             data = {}
@@ -1112,31 +1113,14 @@ def get_daily_summary(force_new=False):
         return None
 
 async def send_eod_summary():
-    """Send end-of-day summary at 23:55 UTC"""
-    summary = get_daily_summary(force_new=True)
-    if not summary:
-        return False
-
-    msg = (
-        f"🌙 <b>End-of-Day Summary - {summary['date']}</b>\n\n"
-        f"Trades: {summary['total']} ({summary['completed']} completed, {summary['pending']} pending)\n"
-        f"<b>WR: {summary['wr']:.1f}%</b> ({summary['wins']}W / {summary['losses']}L)\n"
-        f"<b>P&L: ${summary['pnl']:+.2f}</b>\n\n"
-        f"<b>UP:</b>   {summary['up_count']} signals, {summary['up_wins']}W, ${summary['up_pnl']:+.2f}\n"
-        f"<b>DOWN:</b> {summary['down_count']} signals, {summary['down_wins']}W, ${summary['down_pnl']:+.2f}\n"
-    )
-    if summary['best']:
-        msg += f"\nBest:  {summary['best']['direction']} +${summary['best']['pnl']:.2f} @ {summary['best']['time'][11:16]}"
-    if summary['worst'] and summary['worst'] != summary['best']:
-        msg += f"\nWorst: {summary['worst']['direction']} ${summary['worst']['pnl']:+.2f} @ {summary['worst']['time'][11:16]}"
-
-    await send_telegram(msg)
-    print(f"[EOD] Summary sent for {summary['date']}: WR={summary['wr']:.1f}%, P&L=${summary['pnl']:+.2f}")
-    return True
+    """DISABLED - Use send_daily_summary_if_new at 00:00 UTC instead"""
+    return False
 
 async def send_daily_summary_if_new():
-    """Send daily summary via Telegram if it hasn't been sent today"""
-    summary = get_daily_summary(force_new=True)
+    """Send daily summary via Telegram - shows YESTERDAY's results at 00:00 UTC"""
+    # Get yesterday's date (00:00 UTC = new day = show previous day)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
+    summary = get_daily_summary(force_new=True, target_date=yesterday)
     if not summary:
         return False
 
