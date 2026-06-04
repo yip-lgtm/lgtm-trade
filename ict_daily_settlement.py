@@ -110,9 +110,22 @@ def scan_for_pending():
 
     # Load pending
     pending = []
-    if os.path.exists(PENDING_FILE):
-        with open(PENDING_FILE) as f:
-            pending = json.load(f)
+    try:
+        if os.path.exists(PENDING_FILE) and os.path.getsize(PENDING_FILE) > 0:
+            with open(PENDING_FILE) as f:
+                content = f.read().strip()
+                if content:
+                    try:
+                        pending = json.loads(content)
+                    except json.JSONDecodeError:
+                        # Corrupt file - reset it
+                        print(f"⚠️ Corrupt pending file, resetting")
+                        with open(PENDING_FILE, 'w') as f:
+                            f.write('[]')
+                        pending = []
+    except Exception as e:
+        print(f"⚠️ Error loading pending: {e}")
+        pending = []
 
     if not pending:
         print("No pending trades")
@@ -186,9 +199,15 @@ def scan_for_pending():
 def add_pending(signal_data):
     """Add a signal to pending list"""
     pending = []
-    if os.path.exists(PENDING_FILE):
-        with open(PENDING_FILE) as f:
-            pending = json.load(f)
+    try:
+        if os.path.exists(PENDING_FILE) and os.path.getsize(PENDING_FILE) > 0:
+            with open(PENDING_FILE) as f:
+                content = f.read().strip()
+                if content:
+                    pending = json.loads(content)
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"  ⚠️ Reset corrupt pending: {e}")
+        pending = []
 
     # Avoid duplicates
     sig_id = f"{signal_data['symbol']}_{signal_data['signal_time']}"
@@ -215,7 +234,10 @@ def update_daily_stats(settled_trades):
             for line in f:
                 line = line.strip()
                 if line:
-                    all_settled.append(json.loads(line))
+                    try:
+                        all_settled.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue  # Skip corrupt lines
 
     # Load existing daily stats
     daily_stats = {}

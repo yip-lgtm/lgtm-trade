@@ -33,14 +33,17 @@ def load_all_trades():
     if not os.path.exists(SETTLED_FILE):
         return []
     trades = []
-    with open(SETTLED_FILE) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    trades.append(json.loads(line))
-                except:
-                    continue
+    try:
+        with open(SETTLED_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        trades.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+    except Exception:
+        return []
     return trades
 
 
@@ -219,9 +222,14 @@ def generate_full_daily_report(today_str=None):
     # Load all components
     rolling = compute_rolling_metrics(7)
     daily_stats = {}
-    if os.path.exists(DAILY_STATS_FILE):
-        with open(DAILY_STATS_FILE) as f:
-            daily_stats = json.load(f)
+    try:
+        if os.path.exists(DAILY_STATS_FILE) and os.path.getsize(DAILY_STATS_FILE) > 0:
+            with open(DAILY_STATS_FILE) as f:
+                content = f.read().strip()
+                if content:
+                    daily_stats = json.loads(content)
+    except (json.JSONDecodeError, Exception):
+        daily_stats = {}
 
     today_stats = daily_stats.get(today_str, {})
     suspended = check_symbol_filtering()
