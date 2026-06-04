@@ -165,13 +165,14 @@ async function runLSTMSession(kz) {
         await downloadData();
         const lstmOut = runLSTM();
         const ictOut = runICT();
-        const lines = ictOut.split('\n').filter(l => /^\s+[A-Z0-9.]+:\s+(Long|Short|None)/.test(l));
+        // v1.1 format: "📊 MNQ.F bias: BEARISH" or "⏸️ No clear bias"
+        const lines = ictOut.split('\n').filter(l => l.includes('📊') || l.includes('⏸️') || l.includes('✅') || l.includes('setup'));
         const lstmLines = lstmOut.split('\n').filter(l => l.includes('Signal') || l.includes('Long') || l.includes('Short'));
 
         let msg = '🧠 <b>' + kz + ' KZ 開盤 - LSTM 信號</b>\n';
         msg += '📅 ' + loggableTime() + '\n\n';
         if (lstmLines.length > 0) msg += '<pre>' + lstmLines.slice(0,12).join('\n') + '</pre>';
-        msg += '\n<b>ICT:</b>\n<pre>' + lines.slice(0,9).join('\n') + '</pre>';
+        msg += '\n<b>ICT (v1.1):</b>\n<pre>' + lines.slice(0,12).join('\n') + '</pre>';
 
         await sendTelegram(msg);
         state[key] = day;
@@ -200,11 +201,12 @@ async function runJournalSession(kz) {
         await downloadData();
         const ictOut = runICT();
         writeJournal(ictOut, kz);
-        const lines = ictOut.split('\n').filter(l => /^\s+[A-Z0-9.]+:\s+(Long|Short|None)/.test(l));
+        // v1.1 format: "📊 MNQ.F bias: BEARISH" or "⏸️ No clear bias"
+        const lines = ictOut.split('\n').filter(l => l.includes('📊') || l.includes('⏸️') || l.includes('✅') || l.includes('setup'));
 
         let msg = '📝 <b>' + kz + ' KZ 完結 - 紀錄</b>\n';
         msg += '📅 ' + loggableTime() + '\n';
-        msg += '<pre>' + lines.slice(0,9).join('\n') + '</pre>';
+        msg += '<pre>' + lines.slice(0,12).join('\n') + '</pre>';
 
         await sendTelegram(msg);
         state[key] = day;
