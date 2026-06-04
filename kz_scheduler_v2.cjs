@@ -296,7 +296,36 @@ async function main() {
             await runJournalSession('NY');
             continue;
         }
+        // === Daily settlement at 23:55 UTC (1 hour after NY KZ close) ===
+        if (h === 23 && m === 55 && state.dailySettlement !== day) {
+            log('Trigger Daily Settlement');
+            await runDailySettlement();
+            continue;
+        }
     }
 }
 
-main().catch(e => { log('FATAL: ' + e.message); process.exit(1); });
+async function runDailySettlement() {
+    state.dailySettlement = day;
+    saveState();
+    log('Running daily settlement...');
+    const { execSync } = require('child_process');
+    try {
+        const output = execSync('python3 /home/node/.openclaw/workspace/ict_daily_settlement.py settle', {
+            cwd: '/home/node/.openclaw/workspace',
+            encoding: 'utf-8',
+            timeout: 60000
+        });
+        log(output);
+        // Send Telegram summary
+        const summary = execSync('python3 /home/node/.openclaw/workspace/ict_daily_settlement.py summary', {
+            cwd: '/home/node/.openclaw/workspace',
+            encoding: 'utf-8',
+            timeout: 30000
+        });
+        log(summary);
+        await sendTelegram(`🌙 *ICT Daily Settlement*\n\`\`\`\n${summary}\n\`\`\``);
+    } catch (e) {
+        log('Settlement error: ' + e.message);
+    }
+}
