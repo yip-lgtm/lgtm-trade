@@ -691,7 +691,7 @@ def dynamic_relax_filters():
     # Increment by 81s (one cycle) and persist
     no_signal_min = max(no_signal_min, 0) + 81.0 / 60.0
     relax_state['no_signal_min'] = no_signal_min
-    relax_state['last_signal_time'] = datetime.now(timezone.utc).isoformat() if LAST_SIGNAL_TIME is None else relax_state.get('last_signal_time')
+    # DO NOT overwrite last_signal_time here - only update on actual signal
     try:
         with open(RELAX_FILE, 'w') as f:
             json.dump(relax_state, f)
