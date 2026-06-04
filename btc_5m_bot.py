@@ -45,7 +45,7 @@ except ImportError:
 # === CONFIG ===
 DRY_RUN = True  # SIGNAL ONLY - User trades manually
 MIN_PROB = 0.50
-MIN_EDGE = 0.015  # Lowered from 0.03 to capture more signals in low-vol
+MIN_EDGE = 0.005  # Lowered from 0.015 to 0.005 (aggressive v2)
 MAX_POSITION = 5.0  # Max $5 per trade
 MAX_DAILY_LOSS = 30.0  # Max $30 daily loss
 CHECK_INTERVAL = 81
@@ -59,9 +59,9 @@ DYNAMIC_MODE = True  # Auto-relax filters when no signals
 LAST_SIGNAL_TIME = datetime.now(timezone.utc)  # Initialize to start time so relax works from start
 SIGNAL_FREE_MIN_THRESHOLD = 30  # Start relaxing after 30 min no signal
 RELAX_STEP_MIN = 15  # Adjust every 15 min
-MIN_PROB_FLOOR = 0.42  # Don't go below this
-ATR_MULT_FLOOR = 0.4  # Don't go below this
-VOL_MULT_FLOOR = 0.3  # Don't go below this
+MIN_PROB_FLOOR = 0.35  # Lowered from 0.42 (aggressive v2)
+ATR_MULT_FLOOR = 0.2  # Lowered from 0.4 (aggressive v2)
+VOL_MULT_FLOOR = 0.15  # Lowered from 0.3 (aggressive v2)
 PROB_RELAX_AMOUNT = 0.02  # Lower MIN_PROB by this per step
 MULT_RELAX_AMOUNT = 0.05  # Lower ATR/VOL_MULT by this per step
 
@@ -893,35 +893,36 @@ async def run_trading_cycle():
     else:
         reason = "OK"
         signal_active = True
-        # === COUNTER-TREND FILTER ===
+        # === COUNTER-TREND FILTER (relaxed v2) ===
         # If recent 5 candles strongly trending, don't predict counter-trend
         if len(directions) >= 5:
             recent_dirs = directions[-5:]
             up_count = sum(1 for d in recent_dirs if d == 1)
             down_count = 5 - up_count
-            if direction == 'UP' and down_count >= 4:
+            # Relaxed: only skip if 5/5 same direction
+            if direction == 'UP' and down_count == 5:
                 signal_active = False
-                reason = f"Counter-trend UP (last 5: {up_count}U/{down_count}D)"
-            elif direction == 'DOWN' and up_count >= 4:
+                reason = f"Counter-trend UP (5D)"
+            elif direction == 'DOWN' and up_count == 5:
                 signal_active = False
-                reason = f"Counter-trend DOWN (last 5: {up_count}U/{down_count}D)"
-        # === RECENT LOSS FILTER ===
-        # If last 2 trades in same direction were losses, skip
+                reason = f"Counter-trend DOWN (5U)"
+        # === RECENT LOSS FILTER (relaxed v2) ===
+        # If last 4 trades in same direction were losses, skip
         try:
             if os.path.exists(TRADES_LOG):
                 recent_loss_count = {'UP': 0, 'DOWN': 0}
                 with open(TRADES_LOG) as f:
                     lines = f.readlines()
-                    for line in lines[-6:]:  # Last 6 trades
+                    for line in lines[-8:]:  # Last 8 trades (relaxed)
                         try:
                             t = json.loads(line.strip())
                             if t.get('result') == 'LOSS' and t.get('direction') in recent_loss_count:
                                 recent_loss_count[t['direction']] += 1
                         except:
                             pass
-                if recent_loss_count.get(direction, 0) >= 2:
+                if recent_loss_count.get(direction, 0) >= 4:  # 4 losses (relaxed from 2)
                     signal_active = False
-                    reason = f"Recent 2 {direction} losses - skip"
+                    reason = f"Recent 4 {direction} losses - skip"
         except:
             pass
         # Only track for relax if actually triggering
