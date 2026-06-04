@@ -185,6 +185,38 @@ class YahooCSVDataProvider:
         self.cache[symbol] = candles
         return candles
 
+    def get_intraday_data(self, symbol: str, count: int = 200) -> Optional[List[Candle]]:
+        """Try to load 5min/15min/1hr intraday data from {symbol}_Xmin.csv or {symbol}_1hr.csv"""
+        # Convert MES.F to MES_F for filename lookup
+        symbol_underscore = symbol.replace('.', '_')
+
+        for tf in ['5min', '15min', '1hr']:
+            for path in [
+                os.path.join(self.base_dir, f"{symbol}_{tf}.csv"),
+                os.path.join(self.base_dir, f"{symbol_underscore}_{tf}.csv")
+            ]:
+                if os.path.exists(path):
+                    candles = []
+                    with open(path) as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            try:
+                                # Handle both Datetime and datetime columns
+                                dt = row.get('Datetime') or row.get('datetime', '')
+                                candles.append(Candle(
+                                    datetime=dt,
+                                    open=float(row.get('Open') or row['open']),
+                                    high=float(row.get('High') or row['high']),
+                                    low=float(row.get('Low') or row['low']),
+                                    close=float(row.get('Close') or row['close']),
+                                    volume=float(row.get('Volume') or row.get('volume', 0))
+                                ))
+                            except (KeyError, ValueError, TypeError):
+                                continue
+                    if candles:
+                        return candles[-count:]
+        return None
+
 
 # ==================== Main Class ====================
 
@@ -282,8 +314,11 @@ class ICTScanner:
         return all_setups
 
     def scan_symbol(self, symbol: str, bias: str, kill_zone: str) -> List[Setup]:
-        """Scan single symbol for ICT setups"""
-        data = self.data_provider.get_daily_data(symbol, count=300)
+        """Scan single symbol for ICT setups (uses 5min intraday data)"""
+        # Try 5min first, fall back to daily if not available
+        data = self.data_provider.get_intraday_data(symbol, count=200)
+        if data is None or len(data) < 50:
+            data = self.data_provider.get_daily_data(symbol, count=200)
         if len(data) < 50:
             return []
 
@@ -292,37 +327,128 @@ class ICTScanner:
 
     # ==================== Step 1: Daily Bias ====================
 
+    def get_market_structure(self, data: List[Candle], lookback: int = 20) -> Dict:
+        """
+        Identify market structure via swing high/low breaks.
+        Returns: {bias: 'BULLISH'/'BEARISH', last_bos: 'bullish'/'bearish'/'none', swing_h: float, swing_l: float}
+        """
+        if len(data) < 10:
+            return {'bias': 'NONE', 'last_bos': 'none', 'swing_h': 0, 'swing_l': 0}
+
+        recent = data[-min(lookback, len(data)):]
+        highs = [d.high for d in recent]
+        lows = [d.low for d in recent]
+
+        # Find swing highs/lows (3-bar pivot)
+        swing_highs = []
+        swing_lows = []
+        for i in range(1, len(recent) - 1):
+            if recent[i].high > recent[i-1].high and recent[i].high > recent[i+1].high:
+                swing_highs.append((i, recent[i].high))
+            if recent[i].low < recent[i-1].low and recent[i].low < recent[i+1].low:
+                swing_lows.append((i, recent[i].low))
+
+        if not swing_highs or not swing_lows:
+            return {'bias': 'NONE', 'last_bos': 'none', 'swing_h': max(highs), 'swing_l': min(lows)}
+
+        # Check for BOS: price broke above previous swing high (bullish) or below swing low (bearish)
+        current_close = recent[-1].close
+        last_swing_h = max(swing_highs, key=lambda x: x[0])[1]
+        last_swing_l = min(swing_lows, key=lambda x: x[0])[1]
+
+        bos = 'none'
+        if current_close > last_swing_h:
+            bos = 'bullish'
+        elif current_close < last_swing_l:
+            bos = 'bearish'
+
+        # Determine bias from BOS + recent structure
+        # Higher highs + higher lows = bullish; lower highs + lower lows = bearish
+        first_half = recent[:len(recent)//2]
+        second_half = recent[len(recent)//2:]
+        hh_first = max(d.high for d in first_half)
+        hh_second = max(d.high for d in second_half)
+        ll_first = min(d.low for d in first_half)
+        ll_second = min(d.low for d in second_half)
+
+        bias = 'NONE'
+        if hh_second > hh_first and ll_second > ll_first:
+            bias = 'BULLISH'  # Higher highs + higher lows
+        elif hh_second < hh_first and ll_second < ll_first:
+            bias = 'BEARISH'  # Lower highs + lower lows
+
+        return {
+            'bias': bias,
+            'last_bos': bos,
+            'swing_h': max(highs),
+            'swing_l': min(lows)
+        }
+
     def get_daily_bias(self) -> str:
         """
-        Daily Bias based on:
-        - Last day's close vs 5-day SMA
-        - Higher timeframe trend
+        Daily Bias per ICT methodology:
+        - 20-day market structure (HH+HL = bullish, LH+LL = bearish)
+        - BOS confirmation
         """
         try:
             data = self.data_provider.get_daily_data('MES.F', count=20)
-            if len(data) < 10:
+            if len(data) < 15:
                 return "NONE"
-            closes = [d.close for d in data]
-            last_close = closes[-1]
-            sma5 = sum(closes[-5:]) / 5
-            sma20 = sum(closes) / len(closes)
 
-            if last_close > sma5 > sma20:
-                return "BULLISH"
-            elif last_close < sma5 < sma20:
-                return "BEARISH"
-            else:
+            structure = self.get_market_structure(data, lookback=20)
+            bias = structure['bias']
+
+            # BOS confirmation
+            if bias == 'BULLISH' and structure['last_bos'] == 'bearish':
+                return "NONE"  # Conflicting signals
+            if bias == 'BEARISH' and structure['last_bos'] == 'bullish':
                 return "NONE"
+
+            return bias
         except Exception as e:
             self.logger.error(f"Bias error: {e}")
             return "NONE"
 
     # ==================== Step 2: Liquidity Sweep ====================
 
+    def get_pre_kz_range(self, data: List[Candle], kz_name: str) -> Dict:
+        """
+        Get pre-Kill-Zone high/low (the liquidity pool).
+        Pre-London: yesterday's 18:00-today 06:00 UTC
+        Pre-NY: today's 06:00-12:30 UTC
+        """
+        if len(data) < 5:
+            return {'high': 0, 'low': 0, 'swept_high': False, 'swept_low': False}
+
+        if kz_name == 'LondonOpen':
+            # Pre-London: prior 6 hours (or all data if not enough)
+            pre_kz = data[-12:]  # 12 5-min candles = 1 hour
+        else:  # NYOpen
+            # Pre-NY: 4 hours
+            pre_kz = data[-48:]
+
+        if not pre_kz:
+            return {'high': 0, 'low': 0, 'swept_high': False, 'swept_low': False}
+
+        pre_high = max(d.high for d in pre_kz)
+        pre_low = min(d.low for d in pre_kz)
+
+        # Check if recent price swept the levels
+        recent = data[-6:]  # last 30 min
+        swept_high = any(d.high > pre_high for d in recent) and data[-1].close < pre_high
+        swept_low = any(d.low < pre_low for d in recent) and data[-1].close > pre_low
+
+        return {
+            'high': pre_high,
+            'low': pre_low,
+            'swept_high': swept_high,
+            'swept_low': swept_low
+        }
+
     def check_liquidity_sweep(self, data: List[Candle], direction: str) -> bool:
         """
-        Check if recent price swept swing high/low
-        Sweep = wick through level, close back inside
+        Check if recent price swept swing high/low.
+        Per ICT: sweep = wick through level, close back inside.
         """
         if len(data) < 5:
             return False
@@ -332,7 +458,6 @@ class ICTScanner:
             return False
 
         if direction == "BULLISH":
-            # Swept below recent low, closed back above
             recent_low = min(d.low for d in prev_swing)
             if last.low < recent_low and last.close > recent_low:
                 return True
@@ -341,6 +466,83 @@ class ICTScanner:
             if last.high > recent_high and last.close < recent_high:
                 return True
         return False
+
+    # ==================== Step 2.5: Order Block ====================
+
+    def detect_order_block(self, data: List[Candle], direction: str) -> Optional[Dict]:
+        """
+        ICT Order Block detection.
+        Bullish OB: last down candle before strong up move
+        Bearish OB: last up candle before strong down move
+        Returns: {type: 'BULL'/'BEAR', high: float, low: float, mitigated: bool}
+        """
+        if len(data) < 10:
+            return None
+
+        recent = data[-20:]  # look back 20 candles
+        if direction == "BULLISH":
+            # Find last down candle (close < open) before a strong up move
+            for i in range(len(recent) - 3, max(len(recent) - 10, 0), -1):
+                candle = recent[i]
+                next_candle = recent[i + 1]
+                # Down candle followed by strong up move (next close > candle.high)
+                if candle.close < candle.open and next_candle.close > candle.high:
+                    return {
+                        'type': 'BULL',
+                        'high': candle.high,
+                        'low': candle.low,
+                        'mitigated': data[-1].low < candle.low
+                    }
+        else:  # BEARISH
+            for i in range(len(recent) - 3, max(len(recent) - 10, 0), -1):
+                candle = recent[i]
+                next_candle = recent[i + 1]
+                # Up candle followed by strong down move
+                if candle.close > candle.open and next_candle.close < candle.low:
+                    return {
+                        'type': 'BEAR',
+                        'high': candle.high,
+                        'low': candle.low,
+                        'mitigated': data[-1].high > candle.high
+                    }
+        return None
+
+    def detect_displacement(self, data: List[Candle], direction: str) -> bool:
+        """
+        ICT Displacement: strong momentum candle that breaks structure.
+        Bullish: large body (close-open) > 2x ATR
+        Bearish: large body > 2x ATR
+        """
+        if len(data) < 20:
+            return False
+        atr = self._compute_atr(data, period=14)
+        if atr <= 0:
+            return False
+        last = data[-1]
+        body = abs(last.close - last.open)
+        # Displacement = body > 2x ATR AND close in top/bottom 30% of range
+        if body < 2 * atr:
+            return False
+        candle_range = last.high - last.low
+        if candle_range <= 0:
+            return False
+        if direction == "BULLISH":
+            return last.close > last.open and (last.close - last.low) / candle_range > 0.7
+        else:  # BEARISH
+            return last.close < last.open and (last.high - last.close) / candle_range > 0.7
+
+    def _compute_atr(self, data: List[Candle], period: int = 14) -> float:
+        """ATR(period)"""
+        if len(data) < period + 1:
+            return 0.0
+        trs = []
+        for i in range(1, len(data)):
+            h = data[i].high
+            l = data[i].low
+            pc = data[i-1].close
+            tr = max(h - l, abs(h - pc), abs(l - pc))
+            trs.append(tr)
+        return sum(trs[-period:]) / period
 
     # ==================== Step 3: OTE Zone ====================
 
@@ -464,6 +666,10 @@ class ICTScanner:
 
             # Sweep
             swept = self.check_liquidity_sweep(data, "BULLISH")
+            # NEW: Order Block + Displacement
+            ob = self.detect_order_block(data, "BULLISH")
+            displacement = self.detect_displacement(data, "BULLISH")
+            in_ob = ob is not None and not ob['mitigated'] and ob['low'] <= cur <= ob['high']
 
             # Conditions
             cond_rsi = 30 < cur_rsi < 60
@@ -474,7 +680,7 @@ class ICTScanner:
             cond_sweep = swept
 
             if cond_rsi and cond_ema and cond_fvg_or_ote:
-                # Calculate confidence
+                # Calculate confidence (per spec: each confluence = 1, need >= 2)
                 conf = 0
                 reasons = []
                 if fvg is not None:
@@ -492,6 +698,12 @@ class ICTScanner:
                 if cond_bb:
                     conf += 1
                     reasons.append("Lower BB")
+                if in_ob:
+                    conf += 2
+                    reasons.append(f"Order Block ({ob['low']:.2f}-{ob['high']:.2f})")
+                if displacement:
+                    conf += 2
+                    reasons.append("Displacement")
                 if vol_above:
                     reasons.append("Volume ↑")
 
@@ -508,6 +720,10 @@ class ICTScanner:
             ote = self.calculate_ote_zone(swing_h, swing_l, "BEARISH")
             in_ote = ote["valid"] and ote["low"] <= cur <= ote["high"]
             swept = self.check_liquidity_sweep(data, "BEARISH")
+            # NEW: Order Block + Displacement
+            ob = self.detect_order_block(data, "BEARISH")
+            displacement = self.detect_displacement(data, "BEARISH")
+            in_ob = ob is not None and not ob['mitigated'] and ob['low'] <= cur <= ob['high']
 
             cond_rsi = 40 < cur_rsi < 70
             cond_ema = cur_ema12 < cur_ema26
@@ -534,6 +750,12 @@ class ICTScanner:
                 if cond_bb:
                     conf += 1
                     reasons.append("Upper BB")
+                if in_ob:
+                    conf += 2
+                    reasons.append(f"Order Block ({ob['low']:.2f}-{ob['high']:.2f})")
+                if displacement:
+                    conf += 2
+                    reasons.append("Displacement")
                 if vol_above:
                     reasons.append("Volume ↑")
 
@@ -584,6 +806,63 @@ class ICTScanner:
         )
 
     # ==================== Step 6: Risk Check ====================
+
+    def check_qualified_day(self, current_pnl: float, position: Position) -> bool:
+        """
+        Per spec: if profit >= $250, partial close 50% + move SL to breakeven.
+        Returns True if qualified day was just achieved.
+        """
+        if position.qualified_locked:
+            return False
+        if current_pnl >= self.QUALIFIED_DAY_PROFIT:
+            position.qualified_locked = True
+            self.account.qualified_days += 1
+            self.logger.info(
+                f"🎯 QUALIFIED DAY #{self.account.qualified_days}: "
+                f"P&L ${current_pnl:.0f} >= $250 | Move SL to BE"
+            )
+            return True
+        return False
+
+    def manage_position(self, position: Position, current_price: float) -> Dict:
+        """
+        Position management per spec:
+        - If profit >= $250: partial close 50%, move SL to BE, record qualified day
+        - If daily_pnl <= -$200: close all, kill-switch
+        Returns: {action: 'HOLD'/'PARTIAL'/'CLOSE', new_sl: float, pnl: float}
+        """
+        # Calculate current P&L
+        pv = self.POINT_VALUE.get(position.symbol, 5)
+        if position.direction == "LONG":
+            points = current_price - position.entry_price
+        else:  # SHORT
+            points = position.entry_price - current_price
+        current_pnl = points * pv * position.contracts
+
+        # Check qualified day trigger
+        if self.check_qualified_day(current_pnl, position):
+            return {
+                'action': 'PARTIAL',
+                'new_sl': position.entry_price,  # Move to breakeven
+                'pnl': current_pnl,
+                'reason': f'Qualified day ${self.QUALIFIED_DAY_PROFIT} reached'
+            }
+
+        # Check daily kill-switch
+        if self.account.daily_pnl <= -self.MAX_DAILY_LOSS:
+            return {
+                'action': 'CLOSE',
+                'new_sl': position.stop_loss,
+                'pnl': current_pnl,
+                'reason': f'Daily loss limit ${self.MAX_DAILY_LOSS} hit'
+            }
+
+        return {
+            'action': 'HOLD',
+            'new_sl': position.stop_loss,
+            'pnl': current_pnl,
+            'reason': 'Holding'
+        }
 
     def check_risk_ok(self, setup: Setup) -> bool:
         """
