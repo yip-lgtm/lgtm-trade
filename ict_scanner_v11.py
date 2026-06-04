@@ -294,22 +294,45 @@ class ICTScanner:
 
         all_setups = []
 
-        # 4. Run KZ scans
-        for kz in ["LondonOpen", "NYOpen"]:
-            if not self.is_in_kill_zone(kz):
+        # 4. Per-symbol scan (each symbol can have its own bias via BOS)
+        for symbol in symbols:
+            if self.account.is_killed_today:
+                self.logger.info("🛑 Daily kill-switch active, no more trades")
+                break
+            try:
+                sym_data = self.data_provider.get_intraday_data(symbol, count=200)
+                if sym_data is None or len(sym_data) < 50:
+                    sym_data = self.data_provider.get_daily_data(symbol, count=200)
+                if sym_data is None or len(sym_data) < 50:
+                    continue
+                # Per-symbol bias via BOS
+                struct = self.get_market_structure(sym_data, lookback=min(50, len(sym_data)))
+                sym_bias = struct['bias']
+                if sym_bias == 'NONE':
+                    # Fallback: simple trend
+                    if len(sym_data) >= 20:
+                        closes = [d.close for d in sym_data[-20:]]
+                        sma10 = sum(closes[-10:]) / 10
+                        sym_bias = 'BULLISH' if closes[-1] > sma10 else 'BEARISH'
+                    else:
+                        continue
+                self.logger.info(f"📊 {symbol} bias: {sym_bias}")
+
+                for kz in ["LondonOpen", "NYOpen"]:
+                    if not self.is_in_kill_zone(kz):
+                        continue
+                    try:
+                        setups = self.find_confluence_setups(sym_data, sym_bias, symbol)
+                    except Exception as e:
+                        self.logger.error(f"{symbol} {kz} setup error: {e}")
+                        continue
+                    for setup in setups:
+                        if self.check_risk_ok(setup):
+                            all_setups.append(setup)
+                            self.send_alert(setup, kz)
+            except Exception as e:
+                self.logger.error(f"{symbol} scan error: {e}")
                 continue
-
-            self.logger.info(f"⏰ In {kz}")
-            for symbol in symbols:
-                if self.account.is_killed_today:
-                    self.logger.info("🛑 Daily kill-switch active, no more trades")
-                    break
-
-                setups = self.scan_symbol(symbol, bias, kz)
-                for setup in setups:
-                    if self.check_risk_ok(setup):
-                        all_setups.append(setup)
-                        self.send_alert(setup, kz)
 
         return all_setups
 
@@ -921,7 +944,7 @@ class ICTScanner:
     # ==================== Notifications ====================
 
     def send_alert(self, setup: Setup, kz: str):
-        """Send alert via notifier"""
+        """Send alert via notifier + queue for daily settlement"""
         msg = (
             f"🔥🔥🔥 {kz} KILL ZONE 有效信號！！！\n\n"
             f"📊 {setup.symbol}: {setup.direction}\n"
@@ -942,6 +965,44 @@ class ICTScanner:
             except Exception as e:
                 self.logger.error(f"Notifier error: {e}")
 
+        # Queue for daily settlement
+        try:
+            import json
+            from datetime import datetime, timezone
+            pending_file = '/tmp/ict_pending_trades.json'
+            pending = []
+            import os
+            if os.path.exists(pending_file):
+                try:
+                    with open(pending_file) as f:
+                        pending = json.load(f)
+                except:
+                    pending = []
+            sig_id = f"{setup.symbol}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{setup.direction}"
+            trade = {
+                'id': sig_id,
+                'symbol': setup.symbol,
+                'direction': setup.direction,
+                'entry': setup.entry,
+                'sl': setup.stop_loss,
+                'tp1': setup.tp1,
+                'tp2': setup.tp2,
+                'confidence': setup.confidence,
+                'reasons': setup.reasons,
+                'kz': kz,
+                'date': datetime.now(timezone.utc).strftime('%Y-%m-%d'),
+                'signal_time': datetime.now(timezone.utc).isoformat(),
+                'added_at': datetime.now(timezone.utc).isoformat(),
+            }
+            # Avoid duplicates
+            if not any(t.get('id') == sig_id for t in pending):
+                pending.append(trade)
+                with open(pending_file, 'w') as f:
+                    json.dump(pending, f, indent=2)
+                self.logger.info(f"📋 Queued for settlement: {sig_id}")
+        except Exception as e:
+            self.logger.error(f"Queue error: {e}")
+
 
 # ==================== Example Usage ====================
 
@@ -954,7 +1015,8 @@ def main():
         print(f"[TG] {msg[:100]}...")
 
     scanner = ICTScanner(dp, notifier=tg_notifier)
-    symbols = ['MES.F', 'MNQ.F', 'M2K.F', 'MCL.F', 'MBT.F', 'MET.F']
+    # Optimized symbol list (per backtest: 35% WR, +$700 P&L)
+    symbols = ['MNQ.F', 'M2K.F', 'MBT.F', 'MET.F']
 
     setups = scanner.run_daily_scan(symbols)
     print(f"\n✅ {len(setups)} setups found")
