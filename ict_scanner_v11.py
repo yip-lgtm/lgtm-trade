@@ -261,8 +261,8 @@ class ICTScanner:
 
         # Strategy parameters (configurable for WF optimization)
         self.SWING_LOOKBACK = 20
-        self.OTE_LOW = 0.62
-        self.OTE_HIGH = 0.79
+        self.OTE_LOW = 0.50  # Widened from 0.62 (more entries)
+        self.OTE_HIGH = 0.85  # Widened from 0.79 (more entries)
         self.MIN_FVG_TICKS = 5
         self.MIN_CONFIDENCE = 3
         self.MAX_TRADES_PER_DAY = 2
@@ -600,25 +600,28 @@ class ICTScanner:
         FVG = Fair Value Gap (3-candle imbalance)
         Bullish: candle[0].high < candle[2].low (gap up)
         Bearish: candle[0].low > candle[2].high (gap down)
+        Relaxed: check last 10 candles for any FVG near current price
         """
         if len(data) < 3:
             return None
-        c0 = data[-3]
-        c1 = data[-2]
-        c2 = data[-1]
+        # Relaxed: check up to 10 candles back
+        for offset in range(2, min(10, len(data) - 1)):
+            c0 = data[-(offset + 2)]
+            c1 = data[-(offset + 1)]
+            c2 = data[-offset]
 
-        if direction == "BULLISH":
-            if c0.high < c2.low:
-                return {
-                    "type": "BULL",
-                    "low": c0.high,
-                    "high": c2.low,
-                    "mid": (c0.high + c2.low) / 2
-                }
-        else:  # BEARISH
-            if c0.low > c2.high:
-                return {
-                    "type": "BEAR",
+            if direction == "BULLISH":
+                if c0.high < c2.low:
+                    return {
+                        "type": "BULL",
+                        "low": c0.high,
+                        "high": c2.low,
+                        "mid": (c0.high + c2.low) / 2
+                    }
+            else:  # BEARISH
+                if c0.low > c2.high:
+                    return {
+                        "type": "BEAR",
                     "low": c2.high,
                     "high": c0.low,
                     "mid": (c2.high + c0.low) / 2
@@ -730,7 +733,7 @@ class ICTScanner:
                 if vol_above:
                     reasons.append("Volume ↑")
 
-                if conf >= 3:  # Min confidence
+                if conf >= 2:  # Min confidence (relaxed from 3)
                     setup = self.build_setup(
                         symbol, "LONG", cur, swing_h, swing_l, ote, fvg,
                         conf, reasons
@@ -782,7 +785,7 @@ class ICTScanner:
                 if vol_above:
                     reasons.append("Volume ↑")
 
-                if conf >= 3:
+                if conf >= 2:
                     setup = self.build_setup(
                         symbol, "SHORT", cur, swing_h, swing_l, ote, fvg,
                         conf, reasons
