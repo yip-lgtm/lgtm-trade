@@ -981,7 +981,16 @@ class ICTScanner:
                         pending = json.load(f)
                 except:
                     pending = []
-            sig_id = f"{setup.symbol}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{setup.direction}"
+            sig_id = f"{setup.symbol}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H')}_{setup.direction}"
+            # Dedup: same symbol+direction+kz within same hour
+            cur_hour_prefix = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H')
+            is_dup = any(
+                t.get('symbol') == setup.symbol
+                and t.get('direction') == setup.direction
+                and t.get('kz') == kz
+                and t.get('signal_time', '').startswith(cur_hour_prefix)
+                for t in pending
+            )
             trade = {
                 'id': sig_id,
                 'symbol': setup.symbol,
@@ -997,12 +1006,13 @@ class ICTScanner:
                 'signal_time': datetime.now(timezone.utc).isoformat(),
                 'added_at': datetime.now(timezone.utc).isoformat(),
             }
-            # Avoid duplicates
-            if not any(t.get('id') == sig_id for t in pending):
+            if not is_dup:
                 pending.append(trade)
                 with open(pending_file, 'w') as f:
                     json.dump(pending, f, indent=2)
                 self.logger.info(f"📋 Queued for settlement: {sig_id}")
+            else:
+                self.logger.info(f"⏩ Deduped (same hour/kz): {sig_id}")
         except Exception as e:
             self.logger.error(f"Queue error: {e}")
 
