@@ -182,16 +182,31 @@ def main():
     print(f"\n[{now.strftime('%H:%M:%S')}] Window: {next_window} | "
           f"Seconds left: {seconds_left}")
 
-    # Skip if too early
-    if seconds_left > SECONDS_BEFORE_EXPIRY + 5:
-        # Allow a small grace window in case we're checking slightly late
-        if seconds_left < 300 - 5:  # not at the very start of a new window
-            print("Not in confirmation window")
-            return
-        # Edge case: at top of new 5m, just switched. Wait.
-        if seconds_left > 290:
-            print("Top of new window, waiting...")
-            return
+    # Cron fires at minute marks (xx:00, xx:01, ...). We want to check
+    # at ~30s before expiry. So if cron fires at xx:29:00 (60s left),
+    # we wait 30s; if it fires at xx:30:00 (top of new window, 300s
+    # left), we skip; if it fires at xx:28:00 (120s left), skip.
+    target_check_seconds = 30  # check when 30s left
+
+    # Don't fire too early or too late
+    if seconds_left > 65:  # > 65s left = too early (cron fired at xx:28)
+        print(f"Too early: {seconds_left}s left (need ~{target_check_seconds}s)")
+        return
+    if seconds_left > target_check_seconds:
+        # Sleep until the right moment
+        wait_s = seconds_left - target_check_seconds
+        print(f"Sleeping {wait_s}s until 30s-before-expiry...")
+        time.sleep(wait_s)
+        # Re-evaluate
+        now = datetime.now(timezone.utc)
+        next_window = (int(time.time()) // 300) * 300 + 300
+        seconds_left = get_seconds_until_next_5m_expiry()
+        print(f"[{now.strftime('%H:%M:%S')}] Woke up. Window: {next_window} | "
+              f"Seconds left: {seconds_left}")
+
+    if seconds_left > 60:  # window changed while we were sleeping
+        print("Window advanced during sleep - skipping")
+        return
 
     # Avoid duplicate alerts for the same 5m window
     last_alert = load_last_alert()
