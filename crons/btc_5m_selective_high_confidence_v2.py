@@ -111,47 +111,52 @@ def fetch_polymarket_odds() -> dict:
 # ==================== LLM layer (Option D) ====================
 def call_minimax(prompt: str) -> tuple:
     """
-    Call MiniMax via Anthropic-compatible API.
+    Call MiniMax via OpenClaw's `infer model run` subprocess.
+    Uses OpenClaw's own auth (no API key needed in env).
     Returns (content_str, input_tokens, output_tokens).
     Returns (None, 0, 0) on failure.
     """
-    api_key = os.environ.get('MINIMAX_API_KEY', '').strip()
-    if not api_key:
-        print("[LLM_ERR] MINIMAX_API_KEY not set in env")
-        return None, 0, 0
-
-    # Anthropic Messages API format
-    body = {
-        "model": LLM_MODEL,
-        "max_tokens": 200,
-        "temperature": 0.3,
-        "system": (
-            "You are a short-term crypto trading analyst. "
-            "Always respond with valid JSON only, no preamble. "
-            "Schema: {\"direction\":\"UP|DOWN\",\"confidence\":0.00-1.00,\"reason\":\"<20 chars>\"}"
-        ),
-        "messages": [{"role": "user", "content": prompt}],
-    }
+    import subprocess
     try:
-        req = urllib.request.Request(
-            f"{LLM_BASE_URL}/v1/messages",
-            data=json.dumps(body).encode(),
-            headers={
-                'Content-Type': 'application/json',
-                'x-api-key': api_key,
-                'anthropic-version': '2023-06-01',
-                'User-Agent': 'openclaw-btc-5m/2.0',
-            }
+        result = subprocess.run(
+            ['openclaw', 'infer', 'model', 'run',
+             '--prompt', prompt,
+             '--model', LLM_MODEL,
+             '--json'],
+            capture_output=True, text=True, timeout=45
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-        # Parse Anthropic response
-        content_blocks = data.get('content', [])
-        text = ''.join(b.get('text', '') for b in content_blocks if b.get('type') == 'text')
+        if result.returncode != 0:
+            print(f"[LLM_ERR] exit={result.returncode} stderr={result.stderr[:200]}")
+            return None, 0, 0
+        # Parse JSON output
+        try:
+            data = json.loads(result.stdout)
+        except Exception:
+            # Sometimes output isn't JSON, treat stdout as text
+            return result.stdout.strip() or None, 0, 0
+        # Extract content and usage
+        # Format varies: might be {"content": "...", "usage": {"input_tokens": N, ...}}
+        # or {"output": "...", "input_tokens": N, "output_tokens": N}
+        content = (
+            data.get('content')
+            or data.get('output')
+            or data.get('text')
+            or data.get('message', {}).get('content', '')
+        )
+        # Usage may be nested
         usage = data.get('usage', {})
-        in_tok = usage.get('input_tokens', 0)
-        out_tok = usage.get('output_tokens', 0)
-        return text, in_tok, out_tok
+        in_tok = (
+            usage.get('input_tokens')
+            or data.get('input_tokens', 0)
+        )
+        out_tok = (
+            usage.get('output_tokens')
+            or data.get('output_tokens', 0)
+        )
+        return str(content).strip(), int(in_tok), int(out_tok)
+    except subprocess.TimeoutExpired:
+        print(f"[LLM_ERR] timeout after 45s")
+        return None, 0, 0
     except Exception as e:
         print(f"[LLM_ERR] {e}")
         return None, 0, 0
