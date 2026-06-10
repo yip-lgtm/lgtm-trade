@@ -20,9 +20,12 @@ import urllib.request
 from datetime import datetime, timezone
 
 # Add workspace root to path so we can import skills
-sys.path.insert(0, '/home/node/.openclaw/workspace')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from skills.token_tracker import TokenTracker
+try:
+    from token_tracker import TokenTracker
+except ImportError:
+    from skills.token_tracker import TokenTracker
 
 tracker = TokenTracker('btc_5m_selective_v2')
 
@@ -293,9 +296,20 @@ def main():
     next_window = (int(time.time()) // 300) * 300 + 300
     seconds_left = next_window - int(time.time())
 
-    # Time window check
-    if seconds_left > SECONDS_BEFORE_EXPIRY:
+    # Self-time: cron fires at minute marks. We want to check at ~30s before expiry.
+    # If too early (>65s left), sleep until right moment. If window already passed, skip.
+    if seconds_left > 65:
         return  # too early, silent
+    if seconds_left > SECONDS_BEFORE_EXPIRY:
+        wait_s = seconds_left - SECONDS_BEFORE_EXPIRY
+        print(f"[{now.isoformat()}] Sleeping {wait_s}s until t-{SECONDS_BEFORE_EXPIRY}s...")
+        time.sleep(wait_s)
+        now = datetime.now(timezone.utc)
+        next_window = (int(time.time()) // 300) * 300 + 300
+        seconds_left = next_window - int(time.time())
+        print(f"[{now.isoformat()}] Woke up. Window={next_window} t-{seconds_left}s")
+    if seconds_left > 60:  # window advanced during sleep
+        return
 
     # Dedup: skip if already alerted this window
     last = load_last_alert()
