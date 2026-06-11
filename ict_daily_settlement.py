@@ -297,8 +297,8 @@ def get_cumulative_summary(days=7):
     sorted_dates = sorted(daily_stats.keys(), reverse=True)[:days]
     recent = [daily_stats[d] for d in sorted_dates]
 
-    total_pnl = sum(d['pnl'] for d in recent)
-    total_trades = sum(d['total_trades'] for d in recent)
+    total_pnl = sum(d.get('pnl', d.get('daily_pnl', 0)) for d in recent)
+    total_trades = sum(d.get('total_trades', d.get('trades', 0)) for d in recent)
     total_wins = sum(d['wins'] for d in recent)
     total_losses = sum(d['losses'] for d in recent)
     qualified_count = sum(1 for d in recent if d['qualified_day'])
@@ -310,6 +310,7 @@ def get_cumulative_summary(days=7):
     return {
         'period': f"Last {len(recent)} days",
         'total_pnl': total_pnl,
+        'dates': sorted_dates,
         'avg_daily_pnl': avg_daily_pnl,
         'total_trades': total_trades,
         'wins': total_wins,
@@ -339,11 +340,13 @@ def print_summary():
     print(f"Kill-switch:     {s['kill_switch_days']}/{len(s['days'])}")
     print()
     print("Per day:")
-    for d in s['days']:
+    for date_key, d in zip(s['dates'], s['days']):
         qual = "🎯" if d['qualified_day'] else "  "
         kill = "🛑" if d['kill_switch'] else "  "
-        print(f"  {qual}{kill} {d['date']}: {d['total_trades']:2} trades, "
-              f"WR {d['wr']:5.1f}%, P&L ${d['pnl']:+5.0f} "
+        pnl_val = d.get('pnl', d.get('daily_pnl', 0))
+        trades_val = d.get('total_trades', d.get('trades', 0))
+        print(f"  {qual}{kill} {date_key}: {trades_val:2} trades, "
+              f"WR {d['wr']:5.1f}%, P&L ${pnl_val:+5.0f} "
               f"(L:${d['long_pnl']:+4.0f} S:${d['short_pnl']:+4.0f})")
 
 if __name__ == '__main__':

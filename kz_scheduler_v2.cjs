@@ -332,3 +332,6 @@ async function runDailySettlement() {
         log('Settlement error: ' + e.message);
     }
 }
+
+// ====== BOOTSTRAP ======
+main().catch(e => { log('FATAL: ' + e.stack); process.exit(1); });
